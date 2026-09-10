@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Security fixes are provided for the current `2.0.x` release-candidate line. Older release
+Security fixes are provided for the current `2.0.x` release line. Older release
 candidates and capability-milestone labels are not supported release lines.
 
 ## Reporting a vulnerability
