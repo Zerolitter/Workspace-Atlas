@@ -229,8 +229,9 @@ def _parse_omp_output(
             elapsed += duration
             elapsed_observed = True
 
-    starts: dict[str, dict[str, Any]] = {}
-    ends: dict[str, dict[str, Any]] = {}
+    pending: dict[str, tuple[str, dict[str, Any]]] = {}
+    completed_ids: set[str] = set()
+    completed_tools: list[dict[str, Any]] = []
     for event in events:
         event_type = event.get("type")
         if event_type not in ("tool_execution_start", "tool_execution_end"):
@@ -243,18 +244,20 @@ def _parse_omp_output(
             or TASK_ID.fullmatch(tool_name) is None
         ):
             raise AdapterError("OMP tool event identity is malformed")
-        target = starts if event_type == "tool_execution_start" else ends
-        if call_id in target:
+        if event_type == "tool_execution_start":
+            if call_id in pending or call_id in completed_ids:
+                raise AdapterError("OMP tool event identity is duplicated")
+            pending[call_id] = (tool_name, event)
+            continue
+        if call_id in completed_ids:
             raise AdapterError("OMP tool event identity is duplicated")
-        target[call_id] = event
-    if starts.keys() != ends.keys() or any(
-        starts[call_id]["toolName"] != ends[call_id]["toolName"]
-        for call_id in starts
-    ):
+        start = pending.pop(call_id, None)
+        if start is None or start[0] != tool_name:
+            raise AdapterError("OMP tool request and result events are unpaired")
+        completed_ids.add(call_id)
+        completed_tools.append(event)
+    if pending:
         raise AdapterError("OMP tool request and result events are unpaired")
-    completed_tools = [
-        event for event in events if event.get("type") == "tool_execution_end"
-    ]
     atlas_tools = [
         event for event in completed_tools
         if event["toolName"].startswith("mcp__workspace_atlas_")

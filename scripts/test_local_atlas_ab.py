@@ -478,20 +478,26 @@ class LocalOmpJsonStdioTests(unittest.TestCase):
                 }
                 start_id = "call-1"
                 end_id = "call-2" if "Mismatched pair." in joined else start_id
+                start = {
+                    "type": "tool_execution_start", "toolCallId": start_id,
+                    "toolName": tool_name, "args": {},
+                }
+                failed = "Error result." in joined
+                text = "not json" if "Invalid payload." in joined else json.dumps(payload)
+                end = {
+                    "type": "tool_execution_end", "toolCallId": end_id,
+                    "toolName": tool_name,
+                    "result": {"content": [{"type": "text", "text": text}], "isError": failed},
+                    "isError": failed,
+                }
+                if "End before start." in joined:
+                    print(json.dumps(end))
                 if "Missing start." not in joined:
-                    start = {"type": "tool_execution_start", "toolCallId": start_id, "toolName": tool_name, "args": {}}
                     print(json.dumps(start))
                     if "Duplicate start." in joined:
                         print(json.dumps(start))
-                if "Missing end." not in joined:
-                    failed = "Error result." in joined
-                    text = "not json" if "Invalid payload." in joined else json.dumps(payload)
-                    print(json.dumps({
-                        "type": "tool_execution_end", "toolCallId": end_id,
-                        "toolName": tool_name,
-                        "result": {"content": [{"type": "text", "text": text}], "isError": failed},
-                        "isError": failed,
-                    }))
+                if "Missing end." not in joined and "End before start." not in joined:
+                    print(json.dumps(end))
             message = {
                 "role": "assistant",
                 "content": [{"type": "text", "text": json.dumps(result)}],
@@ -582,8 +588,9 @@ class LocalOmpJsonStdioTests(unittest.TestCase):
 
     def test_malformed_or_unpaired_tool_events_are_rejected(self) -> None:
         cases = (
-            "Missing start.", "Missing end.", "Mismatched pair.",
-            "Duplicate start.", "Error result.", "Invalid payload.",
+            "Missing start.", "Missing end.", "End before start.",
+            "Mismatched pair.", "Duplicate start.", "Error result.",
+            "Invalid payload.",
         )
         for index, prompt in enumerate(cases):
             with self.subTest(prompt=prompt):
