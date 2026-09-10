@@ -34,6 +34,7 @@ CSV_COLUMNS = (
 CSV_NULL_TOKEN = "<null>"
 CSV_MISSING_TOKEN = "<missing>"
 TASK_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
+REQUIRED_EXECUTABLE_ROLES = frozenset({"adapter", "atlas-mcp", "omp"})
 HOME_OR_ABSOLUTE = re.compile(
     r"(?:^[A-Za-z]:[\\/]|^/|^\\\\|^~|%(?:USERPROFILE|HOME)%|"
     r"\$(?:HOME|USERPROFILE)|/(?:home|Users)/|[\\/]Users[\\/])",
@@ -262,9 +263,12 @@ def _validated_executables(manifest: dict[str, Any]) -> list[dict[str, Any]] | N
         ):
             raise ExportError("harness executable provenance is malformed")
         names.add(name)
-    if not any(
-        entry["name"] == "omp" and entry["version"] is not None
-        for entry in executables
+    if (
+        not REQUIRED_EXECUTABLE_ROLES.issubset(names)
+        or not any(
+            entry["name"] == "omp" and entry["version"] is not None
+            for entry in executables
+        )
     ):
         return None
     expected_identity = _hash(

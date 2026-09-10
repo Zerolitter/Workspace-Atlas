@@ -328,6 +328,30 @@ class LocalAtlasAbTests(unittest.TestCase):
             after["campaign_identity_sha256"],
         )
 
+    def test_required_executable_provenance_roles_fail_closed(self) -> None:
+        original = json.loads(self.adapter.read_text(encoding="utf-8"))
+        cases = []
+        for role in ("adapter", "atlas-mcp", "omp"):
+            cases.append((
+                f"missing-{role}",
+                [entry for entry in original["executables"] if entry["name"] != role],
+            ))
+        substituted = [dict(entry) for entry in original["executables"]]
+        substituted[0]["name"] = "other-adapter"
+        cases.append(("substituted", substituted))
+        duplicate = [dict(entry) for entry in original["executables"]]
+        duplicate.append(dict(duplicate[0]))
+        cases.append(("duplicate", duplicate))
+        for name, executables in cases:
+            with self.subTest(name=name):
+                document = {**original, "executables": executables}
+                self.adapter.write_text(json.dumps(document), encoding="utf-8")
+                result = self.run_harness(
+                    "alpha", destination=self.workspace / f"campaign-{name}",
+                    extra=("--repetitions", "1"),
+                )
+                self.assertNotEqual(result.returncode, 0)
+
     def test_runner_wall_time_is_independent_and_adapter_timing_is_preserved(
         self,
     ) -> None:
@@ -426,30 +450,48 @@ class LocalOmpJsonStdioTests(unittest.TestCase):
             disabling = {"--no-tools", "--no-extensions"}
             if configured and any(argument in disabling or argument.startswith("--tools") for argument in sys.argv):
                 raise SystemExit(9)
-            if "Return no accepted result." in " ".join(sys.argv):
+            joined = " ".join(sys.argv)
+            if "Return no accepted result." in joined:
                 result = {"result": "model omitted its acceptance decision"}
             else:
                 result = {
                     "accepted": configured,
                     "state": "accepted" if configured else "rejected",
-                    "result": "observed model result",
+                    "result": (
+                        "Atlas status confirmed: workspace_id=ws_fixture; "
+                        "schema_version=1.3.0; integrity_ok=true."
+                        if configured else "Atlas unavailable"
+                    ),
                 }
-            if configured and "models" not in sys.argv:
-                tool_result = {
-                    "atlas_route": "LIGHT",
-                    "atlas_runtime_ms": 4,
+            emit = configured and "models" not in sys.argv and "No MCP event." not in joined
+            if emit:
+                tool_name = (
+                    "mcp__workspace_atlas_atlas_search"
+                    if "Unrelated Atlas result." in joined
+                    else "mcp__workspace_atlas_atlas_status"
+                )
+                payload = {
+                    "ok": True, "workspace_id": "ws_fixture",
+                    "schema_version": "1.3.0", "integrity_ok": True,
+                    "atlas_route": "LIGHT", "atlas_runtime_ms": 4,
                     "context_expansion": {"records": 3},
                 }
-                print(json.dumps({
-                    "type": "tool_execution_start", "toolCallId": "call-1",
-                    "toolName": "mcp__workspace_atlas_atlas_status", "args": {},
-                }))
-                print(json.dumps({
-                    "type": "tool_execution_end", "toolCallId": "call-1",
-                    "toolName": "mcp__workspace_atlas_atlas_status",
-                    "result": {"content": [{"type": "text", "text": json.dumps(tool_result)}], "isError": False},
-                    "isError": False,
-                }))
+                start_id = "call-1"
+                end_id = "call-2" if "Mismatched pair." in joined else start_id
+                if "Missing start." not in joined:
+                    start = {"type": "tool_execution_start", "toolCallId": start_id, "toolName": tool_name, "args": {}}
+                    print(json.dumps(start))
+                    if "Duplicate start." in joined:
+                        print(json.dumps(start))
+                if "Missing end." not in joined:
+                    failed = "Error result." in joined
+                    text = "not json" if "Invalid payload." in joined else json.dumps(payload)
+                    print(json.dumps({
+                        "type": "tool_execution_end", "toolCallId": end_id,
+                        "toolName": tool_name,
+                        "result": {"content": [{"type": "text", "text": text}], "isError": failed},
+                        "isError": failed,
+                    }))
             message = {
                 "role": "assistant",
                 "content": [{"type": "text", "text": json.dumps(result)}],
@@ -465,7 +507,11 @@ class LocalOmpJsonStdioTests(unittest.TestCase):
         """), encoding="utf-8", newline="\n")
 
     def run_adapter(
-        self, arm: str, enabled: str, prompt: str = "Inspect one bounded fixture.",
+        self,
+        arm: str,
+        enabled: str,
+        prompt: str = "Inspect one bounded fixture.",
+        arm_workspace: Path | None = None,
     ) -> subprocess.CompletedProcess[str]:
         request = {
             "schema_version": "1.0.0",
@@ -474,6 +520,8 @@ class LocalOmpJsonStdioTests(unittest.TestCase):
             "repetition": 1,
             "arm": arm,
         }
+        cwd = arm_workspace or self.arm
+        cwd.mkdir(parents=True, exist_ok=True)
         return subprocess.run(
             [
                 sys.executable, str(OMP_ADAPTER),
@@ -483,7 +531,7 @@ class LocalOmpJsonStdioTests(unittest.TestCase):
                 "--atlas-mcp", str(self.atlas_mcp),
                 "--omp-command", sys.executable, str(self.fake_omp),
             ],
-            cwd=self.arm,
+            cwd=cwd,
             input=json.dumps(request),
             capture_output=True,
             text=True,
@@ -496,7 +544,9 @@ class LocalOmpJsonStdioTests(unittest.TestCase):
         )
 
     def test_translates_model_result_and_enables_atlas_only_for_on_arm(self) -> None:
-        result = self.run_adapter("on", "1")
+        result = self.run_adapter(
+            "on", "1", "Inspect Atlas status for one bounded fixture.",
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.count("\n"), 1)
         observation = json.loads(result.stdout)
@@ -514,7 +564,44 @@ class LocalOmpJsonStdioTests(unittest.TestCase):
         self.assertTrue((self.arm / "atlas-tool-events.json").is_file())
         self.assertEqual(
             json.loads((self.arm / "model-result.json").read_text(encoding="utf-8"))["result"],
-            "observed model result",
+            "Atlas status confirmed: workspace_id=ws_fixture; schema_version=1.3.0; integrity_ok=true.",
+        )
+
+    def test_configured_on_without_mcp_events_stays_unavailable(self) -> None:
+        result = self.run_adapter("on", "1", "No MCP event.")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        observation = json.loads(result.stdout)
+        self.assertEqual(observation["accepted_outcome"], {"accepted": None, "state": "unavailable"})
+        self.assertEqual(observation["tool_calls"], 0)
+        self.assertEqual(observation["files_read"], 0)
+        self.assertEqual(observation["source_bytes_read"], 0)
+        self.assertIsNone(observation["atlas_route"])
+        self.assertIsNone(observation["atlas_runtime_ms"])
+        self.assertIsNone(observation["context_expansion"])
+        self.assertFalse((self.arm / "model-result.json").exists())
+
+    def test_malformed_or_unpaired_tool_events_are_rejected(self) -> None:
+        cases = (
+            "Missing start.", "Missing end.", "Mismatched pair.",
+            "Duplicate start.", "Error result.", "Invalid payload.",
+        )
+        for index, prompt in enumerate(cases):
+            with self.subTest(prompt=prompt):
+                result = self.run_adapter(
+                    "on", "1", prompt, self.arm / f"case-{index}",
+                )
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(
+                    json.loads(result.stdout)["accepted_outcome"],
+                    {"accepted": None, "state": "unavailable"},
+                )
+
+    def test_unrelated_atlas_result_cannot_ground_acceptance(self) -> None:
+        result = self.run_adapter("on", "1", "Unrelated Atlas result.")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            json.loads(result.stdout)["accepted_outcome"],
+            {"accepted": None, "state": "unavailable"},
         )
 
     def test_process_success_without_model_acceptance_stays_unavailable(self) -> None:

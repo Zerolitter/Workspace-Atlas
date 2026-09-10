@@ -23,10 +23,13 @@ Use only actual tool results and supplied task text. Do not edit files or infer
 missing measurements. When Atlas is enabled, call the workspace-atlas
 atlas_status tool once with the exact workspace_root and catalogue supplied in
 the prompt before deciding the result. When Atlas is disabled, Atlas tools are
-unavailable and must not be claimed. Finish with exactly one JSON object:
+unavailable and must not be claimed. A successful status can ground only:
+"Atlas status confirmed: workspace_id=<value>; schema_version=<value>; integrity_ok=true."
+If the task needs evidence beyond that response, return unavailable. Finish with
+exactly one JSON object:
 {"accepted":true|false|null,"state":"accepted|rejected|unavailable","result":"brief evidence-grounded result"}
-Set accepted true only when the requested result was actually produced, false
-only when observed evidence rejects it, and null when evidence is unavailable.
+Set accepted true only for that exact status receipt. Never claim a file, setting,
+route, runtime, or change that the actual tool response does not establish.
 """
 class AdapterError(RuntimeError):
     """The adapter cannot produce a grounded model observation."""
@@ -187,7 +190,7 @@ def _result_object(event: dict[str, Any]) -> dict[str, Any] | None:
 
 def _parse_omp_output(
     path: Path,
-) -> tuple[dict[str, Any] | None, dict[str, Any], bool, list[dict[str, Any]]]:
+) -> tuple[dict[str, Any] | None, dict[str, Any], str | None, list[dict[str, Any]]]:
     if path.stat().st_size > MAX_OMP_OUTPUT_BYTES:
         raise AdapterError("OMP output exceeds byte bound")
     events: list[dict[str, Any]] = []
@@ -225,20 +228,65 @@ def _parse_omp_output(
         if duration is not None:
             elapsed += duration
             elapsed_observed = True
+
+    starts: dict[str, dict[str, Any]] = {}
+    ends: dict[str, dict[str, Any]] = {}
+    for event in events:
+        event_type = event.get("type")
+        if event_type not in ("tool_execution_start", "tool_execution_end"):
+            continue
+        call_id, tool_name = event.get("toolCallId"), event.get("toolName")
+        if (
+            not isinstance(call_id, str)
+            or TASK_ID.fullmatch(call_id) is None
+            or not isinstance(tool_name, str)
+            or TASK_ID.fullmatch(tool_name) is None
+        ):
+            raise AdapterError("OMP tool event identity is malformed")
+        target = starts if event_type == "tool_execution_start" else ends
+        if call_id in target:
+            raise AdapterError("OMP tool event identity is duplicated")
+        target[call_id] = event
+    if starts.keys() != ends.keys() or any(
+        starts[call_id]["toolName"] != ends[call_id]["toolName"]
+        for call_id in starts
+    ):
+        raise AdapterError("OMP tool request and result events are unpaired")
     completed_tools = [
         event for event in events if event.get("type") == "tool_execution_end"
     ]
     atlas_tools = [
         event for event in completed_tools
-        if isinstance(event.get("toolName"), str)
-        and event["toolName"].startswith("mcp__workspace_atlas_")
+        if event["toolName"].startswith("mcp__workspace_atlas_")
     ]
-    successful_atlas = [
-        event for event in atlas_tools
-        if event.get("isError") is False
-        and isinstance(event.get("result"), dict)
-        and event["result"].get("isError") is not True
+    atlas_payloads: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    for event in atlas_tools:
+        payload = _result_object(event)
+        if (
+            event.get("isError") is not False
+            or not isinstance(event.get("result"), dict)
+            or event["result"].get("isError") is True
+            or payload is None
+        ):
+            raise AdapterError("Atlas tool result evidence is invalid")
+        atlas_payloads.append((event, payload))
+    successful_status = [
+        payload for event, payload in atlas_payloads
+        if event["toolName"] == "mcp__workspace_atlas_atlas_status"
+        and payload.get("ok") is True
+        and isinstance(payload.get("workspace_id"), str)
+        and TASK_ID.fullmatch(payload["workspace_id"]) is not None
+        and isinstance(payload.get("schema_version"), str)
+        and TASK_ID.fullmatch(payload["schema_version"]) is not None
+        and payload.get("integrity_ok") is True
     ]
+    grounded_receipt = None
+    if successful_status:
+        payload = successful_status[-1]
+        grounded_receipt = (
+            f"Atlas status confirmed: workspace_id={payload['workspace_id']}; "
+            f"schema_version={payload['schema_version']}; integrity_ok=true."
+        )
     files_read = sum(event.get("toolName") == "read" for event in completed_tools)
     source_bytes = 0
     for event in completed_tools:
@@ -256,10 +304,7 @@ def _parse_omp_output(
     atlas_route = None
     atlas_runtime_ms = None
     context_expansion = None
-    for event in successful_atlas:
-        payload = _result_object(event)
-        if payload is None:
-            continue
+    for _, payload in atlas_payloads:
         if isinstance(payload.get("atlas_route"), str):
             atlas_route = payload["atlas_route"]
         if _number(payload.get("atlas_runtime_ms")) is not None:
@@ -269,7 +314,7 @@ def _parse_omp_output(
     if atlas_tools and context_expansion is None:
         context_expansion = {
             "atlas_tool_calls": len(atlas_tools),
-            "atlas_tool_errors": len(atlas_tools) - len(successful_atlas),
+            "atlas_tool_errors": 0,
         }
     evidence = [
         event for event in events
@@ -286,7 +331,7 @@ def _parse_omp_output(
         "atlas_route": atlas_route,
         "atlas_runtime_ms": atlas_runtime_ms,
         "context_expansion": context_expansion,
-    }, bool(successful_atlas), evidence
+    }, grounded_receipt, evidence
 
 
 def run(arguments: argparse.Namespace) -> tuple[int, dict[str, Any]]:
@@ -337,12 +382,23 @@ def run(arguments: argparse.Namespace) -> tuple[int, dict[str, Any]]:
         completed = subprocess.run(command, cwd=cwd, env=environment, stdout=stdout, stderr=stderr, check=False)
     if completed.returncode != 0:
         return completed.returncode, _unavailable()
-    model_result, metrics, successful_atlas, atlas_events = _parse_omp_output(
+    model_result, metrics, grounded_receipt, atlas_events = _parse_omp_output(
         cwd / "omp-output.ndjson"
     )
     if atlas_events:
         (cwd / "atlas-tool-events.json").write_bytes(_canonical(atlas_events))
-    if request["arm"] == "on" and not successful_atlas:
+    supported_status_task = re.search(
+        r"\bstatus\b", request["prompt"], flags=re.IGNORECASE,
+    ) is not None
+    if model_result is not None and model_result["accepted"] is True:
+        if (
+            request["arm"] != "on"
+            or not supported_status_task
+            or grounded_receipt is None
+            or model_result["result"] != grounded_receipt
+        ):
+            model_result = None
+    elif request["arm"] == "on" and grounded_receipt is None:
         model_result = None
     if model_result is None:
         return 0, {**_unavailable(), **metrics}

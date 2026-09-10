@@ -31,6 +31,41 @@ class BenchmarkEvidenceExportTests(unittest.TestCase):
             capture_output=True, text=True, check=False,
         )
 
+    def rewrite_executables(self, executables: list[dict[str, object]]) -> None:
+        sidecar_path = self.workspace / "harness-manifest.json"
+        sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+        executable_identity = hashlib.sha256(
+            (json.dumps(executables, sort_keys=True, separators=(",", ":")) + "\n").encode()
+        ).hexdigest()
+        sidecar["executables"] = executables
+        sidecar["executable_identity_sha256"] = executable_identity
+        campaign_material = {
+            "adapter_identity_sha256": sidecar["adapter_identity_sha256"],
+            "command_identity_sha256": sidecar["command_identity_sha256"],
+            "executable_identity_sha256": executable_identity,
+            "max_tasks": sidecar["max_tasks"],
+            "model_identity_sha256": sidecar["model_identity_sha256"],
+            "repetitions": sidecar["repetitions"],
+            "task_manifest_sha256": sidecar["task_manifest"]["sha256"],
+            "tasks": sidecar["tasks"],
+            "timeout_seconds": sidecar["timeout_seconds"],
+        }
+        campaign_identity = hashlib.sha256(
+            (json.dumps(campaign_material, sort_keys=True, separators=(",", ":")) + "\n").encode()
+        ).hexdigest()
+        sidecar["campaign_identity_sha256"] = campaign_identity
+        records = [
+            json.loads(line)
+            for line in self.source.read_text(encoding="utf-8").splitlines()
+        ]
+        for record in records:
+            record["executable_identity_sha256"] = executable_identity
+            record["campaign_identity_sha256"] = campaign_identity
+        payload = "".join(json.dumps(record) + "\n" for record in records)
+        self.source.write_text(payload, encoding="utf-8", newline="\n")
+        sidecar["raw_sha256"] = hashlib.sha256(payload.encode()).hexdigest()
+        sidecar_path.write_text(json.dumps(sidecar), encoding="utf-8")
+
     def write_records(self) -> list[dict[str, object]]:
         task_manifest_sha256 = "6" * 64
         omp_version = "omp/18.1.11"
@@ -200,6 +235,39 @@ class BenchmarkEvidenceExportTests(unittest.TestCase):
         self.assertEqual(manifest["state"], "partial")
         self.assertIn("harness_identity", manifest["missing_provenance"])
         self.assertNotIn("identity", manifest)
+
+    def test_each_required_executable_role_is_mandatory(self) -> None:
+        self.write_records()
+        sidecar = json.loads(
+            (self.workspace / "harness-manifest.json").read_text(encoding="utf-8")
+        )
+        original = sidecar["executables"]
+        cases = []
+        for role in ("adapter", "atlas-mcp", "omp"):
+            cases.append((
+                f"missing-{role}",
+                [entry for entry in original if entry["name"] != role],
+            ))
+        substituted = [dict(entry) for entry in original]
+        substituted[0]["name"] = "other-adapter"
+        cases.append(("substituted", substituted))
+        duplicate = [dict(entry) for entry in original]
+        duplicate.append(dict(duplicate[0]))
+        cases.append(("duplicate", duplicate))
+        for name, executables in cases:
+            with self.subTest(name=name):
+                self.write_records()
+                self.rewrite_executables(executables)
+                destination = self.workspace / f"bundle-{name}"
+                result = self.run_export(destination=destination)
+                if result.returncode == 0:
+                    exported = json.loads(
+                        (destination / "manifest.json").read_text(encoding="utf-8")
+                    )
+                    self.assertEqual(exported["state"], "partial")
+                    self.assertIn("harness_identity", exported["missing_provenance"])
+                else:
+                    self.assertFalse(destination.exists())
 
     def test_invalid_harness_pairing_is_partial_with_explicit_missing_provenance(
         self,

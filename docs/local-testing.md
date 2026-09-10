@@ -93,21 +93,28 @@ Use an already-installed Ollama model that demonstrates native tool calls; model
 availability alone is insufficient. OMP JSON events, diagnostics, the exact
 request/prompt, actual Atlas request/result events, model result (when valid),
 and generated configuration remain in that arm directory. Stdout contains only
-the single harness response object. Acceptance comes only from a schema-valid
-model result and, for ON, a successful Atlas tool result; process success or
-model text naming a tool never becomes acceptance. Tokens, duration, tool/file
-counts, source bytes, and Atlas fields are derived only from actual OMP events.
+the single harness response object. A true ON acceptance is supported only when
+the task explicitly requests Atlas status, the model returns a schema-valid
+decision, a unique matched non-error `atlas_status` request/result pair has a
+valid payload, and the model's result exactly matches the bounded receipt derived
+from that payload. Unsupported task claims remain unavailable. An unrelated
+Atlas result, configuration presence, model text naming a tool, or process
+success never becomes acceptance. Duplicate, malformed, mismatched, unpaired,
+error, or invalid-payload tool evidence fails closed. Tokens, duration, tool/file
+counts, source bytes, and Atlas fields come only from actual OMP events.
 Unsupported measurements remain `null`.
 
 Do not put credentials in the adapter command, model name, task IDs, executable
-paths, or version commands. The harness hashes each declared executable's
-contents, probes the declared OMP version command, and binds the sanitized
-executable records into the campaign identity. It hashes command, model,
-adapter, and task identities separately. The campaign identity also binds the
-timeout, repetition count, task bound, and selected tasks. Only sanitized
-command/model displays and executable basenames are retained. The exporter
-recomputes executable and campaign identities and fails closed on contradiction
-or missing concrete OMP version provenance.
+paths, or version commands. Executable provenance must contain unique `adapter`,
+`atlas-mcp`, and versioned `omp` roles; up to five additional roles are allowed.
+The harness hashes each declared executable's contents, probes the declared OMP
+version command, and binds the sanitized executable records into the campaign
+identity. It hashes command, model, adapter, and task identities separately. The
+campaign identity also binds the timeout, repetition count, task bound, and
+selected tasks. Only sanitized command/model displays and executable basenames
+are retained. The exporter recomputes executable and campaign identities and
+cannot mark evidence complete when a mandatory role or concrete OMP version is
+missing; contradictions fail export.
 The harness invokes the command directly, never through a shell, and contains
 the process tree for both successful and timed-out runs. For each explicitly
 selected task and repetition it runs `off`
@@ -157,6 +164,11 @@ and unknown fields in the raw payload. `environment.json` contains only fixed ho
 fields and an optional allowlist from `--environment`. Allowlisted strings matching
 absolute/home paths, control characters, or obvious secret-bearing assignments such
 as `password=...` are omitted; arbitrary environment variables are never dumped.
+
+Only the exported five-file bundle is portable and sanitized for sharing. The
+raw campaign tree is private local diagnostic evidence: it retains OMP databases,
+WAL/SHM state, full event streams, prompts, local paths, and model reasoning.
+Never publish or distribute the raw campaign tree.
 
 Every bundle contains exactly:
 

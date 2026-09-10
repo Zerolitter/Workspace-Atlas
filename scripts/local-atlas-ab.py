@@ -30,6 +30,7 @@ MAX_RUNNER_OUTPUT_BYTES = 1024 * 1024
 MAX_EXECUTABLE_BYTES = 512 * 1024 * 1024
 MAX_VERSION_BYTES = 16 * 1024
 TASK_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
+REQUIRED_EXECUTABLE_ROLES = frozenset({"adapter", "atlas-mcp", "omp"})
 SECRET_OPTION = re.compile(r"(?i)(?:secret|token|password|api[-_]?key|credential)")
 METRIC_FIELDS = (
     "tool_calls", "files_read", "source_bytes_read", "atlas_runtime_ms"
@@ -214,8 +215,17 @@ def _adapter(
     if not isinstance(command, list) or not 1 <= len(command) <= 32 or not all(isinstance(arg, str) and arg and len(arg.encode("utf-8")) <= 8192 for arg in command):
         raise HarnessError("adapter command is malformed or outside bounds")
     executables = document["executables"]
-    if not isinstance(executables, list) or not 1 <= len(executables) <= 8:
+    if not isinstance(executables, list) or not 3 <= len(executables) <= 8:
         raise HarnessError("executable provenance is malformed")
+    roles = [
+        entry.get("name") for entry in executables if isinstance(entry, dict)
+    ]
+    if (
+        len(roles) != len(executables)
+        or len(roles) != len(set(roles))
+        or not REQUIRED_EXECUTABLE_ROLES.issubset(roles)
+    ):
+        raise HarnessError("required executable provenance is missing")
     return adapter, model, command, executables
 
 
