@@ -1,5 +1,10 @@
 # Workspace Atlas operator guide
 
+Workspace Atlas v2.0.0 is the first public release. V1-labelled commands,
+Context IR `1.0.0`/`2.0.0`, planners, lifecycle records, capability milestones,
+and all 19 MCP tools are internal contract generations shipped inside v2.0.0,
+not earlier public releases or evidence of an installed external V1 user base.
+
 ## Build
 
 ```sh
@@ -7,6 +12,24 @@ cargo build --release --locked
 ```
 
 This builds `atlas`, `atlas-mcp`, and `atlas-bench`.
+
+## Operational invariants
+
+Source, builds, tests, and runtime evidence are authoritative. Atlas never
+edits workspace source. A candidate Truth Plane generation activates atomically
+or readers remain on the previous complete generation; the Serving Plane is
+derived and rebuildable. Live verification is required before using exact
+source in change mode.
+
+Explicit operations and Governor-routed operations coexist. Explicit commands
+are not silently redirected through the Governor. Context IR `1.0.0` and
+`2.0.0` are separate contracts: unsupported newer schemas fail closed, and
+parsing a supported older document does not satisfy a V2 requirement unless
+that use is explicitly permitted.
+
+Required-provider failure blocks candidate activation. Optional-provider
+failure remains visible as degraded coverage. MCP provides no destructive,
+filesystem-write, or source-materialization authority.
 
 ## Catalogue routing
 
@@ -32,10 +55,10 @@ escaping, mismatched, or ambiguous routes fail closed.
 | `atlas init|reconcile|status|doctor <root>` | Register, refresh, inspect, and recover a catalogue. |
 | `atlas providers <root>` | Report configured provider capabilities and state. |
 | `atlas find|inspect|trace|impact|source <root> ...` | Query indexed evidence or live-verified exact source. |
-| `atlas context|context-ir <root> ...` | Invoke explicit legacy Context Packet or Context IR behavior. |
+| `atlas context|context-ir <root> ...` | Invoke explicit versioned Context Packet or Context IR behavior. |
 | `atlas serving-build|generation-delta|temporal|history <root> ...` | Build derived Serving state or inspect retained evidence. |
 | `atlas governor capabilities|run <root> ...` | Discover the contract and invoke currently available context-acquisition behavior. |
-| `atlas task start|show|complete|abandon <root> ...` | Operate the legacy `1.0.0` task lifecycle. |
+| `atlas task start|show|complete|abandon <root> ...` | Operate the `1.0.0` task lifecycle. |
 | `atlas compiled-context show|context-yield show|serving-status <root> ...` | Read bounded context, yield, and readiness state. |
 | `atlas retention status|compact <root> ...` | Inspect or apply fixed privacy retention. |
 | `atlas unregister <root> ...` | Preview catalogue removal or invoke its fail-closed confirmed boundary. |
@@ -135,15 +158,15 @@ runtime features, not durable V2 lifecycle storage or a runtime default.
 The contract flow, when discovery permits each step, is capability discovery,
 governor execution through the allowed and available ceiling, target-bounded
 LIGHT or DEEP evidence when available and required, live source verification,
-outcome validation, reconciliation after project changes, and legacy task
+outcome validation, reconciliation after project changes, and `1.0.0` task
 completion. `DIRECT` can succeed with `direct_none`, an observed or typed
 unavailable starting generation, zero Atlas calls, and no Atlas context
 identity. Route depth is not model tier: Atlas does not select cloud/local
 models or route by model/vendor.
 
-### Legacy lifecycle and replay
+### Versioned lifecycle and replay
 
-Task mutation is legacy Context IR `1.0.0` only. Request files are closed JSON:
+Task mutation uses Context IR `1.0.0` only. Request files are closed JSON:
 
 ```json
 {"context_ir_version":"1.0.0","task":"fix reconnect behavior","declared_kind":"bug_fix"}
@@ -158,7 +181,7 @@ and committed tree. `task abandon` is legal only from `active` or `reconciled`
 and atomically records `completed_at` plus exactly `user_requested` or
 `inactivity_timeout`.
 
-A supplied legacy session ID is task-start-bound: before any mutation, the
+A supplied `1.0.0` session ID is task-start-bound: before any mutation, the
 application validates its workspace, `1.0.0` contract, task and normalized-goal
 hashes, classification identity, nonterminal state, and applicable starting
 generation. For a validated explicit binding, successful context acquisition
@@ -167,8 +190,8 @@ is the activation boundary. Completed `DIRECT` `direct_none` advances to
 acquisition can activate; blocked, interrupted, error, and no-useful-payload
 outcomes do not.
 
-Successful generation activation reconciles every and only active legacy
-sessions in the workspace whose starting generation is older than the
+Successful generation activation reconciles every and only those active
+`1.0.0` sessions in the workspace whose starting generation is older than the
 candidate. The deterministic session-ID-ordered updates share the same `BEGIN
 IMMEDIATE` transaction as candidate commit and the active-generation pointer.
 Candidate-generation sessions and created, `context_compiled`, reconciled,
@@ -182,9 +205,9 @@ fails without mutation. Completed, abandoned, and failed states are terminal.
 Durable V2 persistence remains unavailable. Task/context/yield show operations
 reject durable V2 lookup as `durable_contract_unavailable`.
 
-`context-yield show` preserves the bounded legacy session, event, metric, and
+`context-yield show` preserves the bounded `1.0.0` session, event, metric, and
 cursor fields. When the session is terminal `completed` with `accepted=true`
-and has a validated non-blocked legacy Context IR from its starting generation,
+and has a validated non-blocked Context IR `1.0.0` from its starting generation,
 the response also includes `report`, a deterministic
 `ContextYieldReportV15`. Its accepted-outcome hash binds the completion
 identity, its single raw sample binds the retained context, and its typed
@@ -192,11 +215,14 @@ metrics retain evidence classes and zero-denominator invalidity. Other session
 states, rejected completions, and accepted completions without a qualifying
 context return `report: null`; Atlas never promotes them to accepted reports.
 
-Existing explicit V1 commands and the original 13 MCP tools do not pass through
-the governor and are neither deprecated nor silently reinterpreted. Context
-Packet and Context IR `1.0.0` remain legacy explicit contracts. The governor
-contract reserves transient Context IR `2.0.0` with `planner-v2.0.0` for DEEP;
-current discovery reports DEEP Context IR available.
+Explicit V1-labelled commands do not pass through the Governor and are not
+silently reinterpreted. They remain supported v2.0.0 public operations. Context
+Packet and Context IR `1.0.0` are explicit contracts. The Governor contract
+uses transient Context IR `2.0.0` with `planner-v2.0.0` for DEEP; current
+discovery reports DEEP Context IR available. The formats remain strictly
+separated: unsupported newer versions fail closed, and successful parsing of a
+supported `1.0.0` document does not satisfy V2 unless the operation explicitly
+permits it.
 
 ## Privacy retention and unregister
 
@@ -373,11 +399,16 @@ schema/provider provenance in
 [`schemas/scip/PROVENANCE.md`](schemas/scip/PROVENANCE.md). Atlas does not
 install providers.
 
+A required provider that fails blocks candidate activation. An optional
+provider failure is retained in diagnostics and coverage so the active result
+visibly reports degraded coverage.
+
 ## MCP adapter
 
 `atlas-mcp` uses newline-delimited JSON-RPC 2.0 over stdio. Send an
-`initialize` request first. `tools/list` returns the existing 13 tools followed
-by exactly `atlas_governor_capabilities`, `atlas_governor_run`,
+`initialize` request first. `tools/list` returns exactly 19 advertised tools.
+All 19 are supported v2 public interfaces, and none is being removed. The
+registry ends with `atlas_governor_capabilities`, `atlas_governor_run`,
 `atlas_task_show`, `atlas_compiled_context_show`,
 `atlas_context_yield_show`, and `atlas_serving_status`.
 
@@ -385,9 +416,12 @@ by exactly `atlas_governor_capabilities`, `atlas_governor_run`,
 execution uses the same application DTO and validated acquisition-bound
 activation semantics as CLI; materialization is disabled. The other five
 additions are reads or capability discovery. MCP exposes no explicit task
-start/complete/abandon command, retention/compaction/unregister, Serving
-build/rebuild, export, backup, caller-path write, filesystem mutation, or
-destructive authority. See the full ordered registry
+start/complete/abandon command, retention/compaction/unregister, export,
+backup, caller-path write, filesystem mutation, or destructive authority. The
+MCP `atlas_serving_build` tool among the 13 core evidence tools performs a
+bounded derived-Serving build operation, which mutates only derived Serving
+Plane state and not workspace source or committed Truth; the six
+governor/lifecycle/status additions add no further build/rebuild authority. See the full ordered registry
 and canonical capability mapping in
 [`README.md`](README.md#semantic-providers-and-mcp) and the shared adapter
 decision in [ADR-017](docs/adr/017-shared-cli-mcp-application-layer.md).
@@ -417,6 +451,7 @@ cargo run --release --locked --bin atlas-bench
   treated as current.
 - Excluded directories are classified but may still be traversed, increasing
   reconcile time for very large build or dependency trees.
+
 
 The possible future Agent Skill remains absent; see
 [ADR-023](docs/adr/023-context-compiler-contract.md) for its separately gated
