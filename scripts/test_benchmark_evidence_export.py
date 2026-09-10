@@ -32,18 +32,38 @@ class BenchmarkEvidenceExportTests(unittest.TestCase):
         )
 
     def write_records(self) -> list[dict[str, object]]:
+        task_manifest_sha256 = "6" * 64
+        identity = {
+            "adapter_identity_sha256": "1" * 64,
+            "command_identity_sha256": "3" * 64,
+            "model_identity_sha256": "4" * 64,
+        }
+        campaign_material = {
+            **identity,
+            "max_tasks": 1,
+            "repetitions": 1,
+            "task_manifest_sha256": task_manifest_sha256,
+            "tasks": ["task-a"],
+            "timeout_seconds": 5.0,
+        }
+        identity["campaign_identity_sha256"] = hashlib.sha256(
+            (
+                json.dumps(
+                    campaign_material,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                )
+                + "\n"
+            ).encode("utf-8")
+        ).hexdigest()
         records = [
             {
                 "schema_version": "1.0.0", "kind": "local-atlas-ab-observation",
-                "task_id": "task-b", "repetition": 1, "arm": "on", "exit_code": 0,
-                "accepted_outcome": {"accepted": None, "state": "unavailable"},
-                "elapsed_ms": None, "tokens": None, "tool_calls": 2,
-                "files_read": None, "source_bytes_read": 17, "atlas_route": "LIGHT",
-                "atlas_runtime_ms": 4, "context_expansion": None, "error": None,
-            },
-            {
-                "schema_version": "1.0.0", "kind": "local-atlas-ab-observation",
-                "task_id": "task-a", "repetition": 1, "arm": "off", "exit_code": 7,
+                "task_id": "task-a", "task_identity_sha256": "5" * 64,
+                "repetition": 1, "arm": "off", "arm_workspace": "arms/task-a/1/off",
+                "model": "fixture-local", "timeout_seconds": 5.0, **identity,
+                "exit_code": 7,
                 "accepted_outcome": {"accepted": False, "state": "rejected"},
                 "elapsed_ms": 12, "tokens": {"input": 3, "output": None, "total": None},
                 "tool_calls": None, "files_read": 1, "source_bytes_read": None,
@@ -51,15 +71,38 @@ class BenchmarkEvidenceExportTests(unittest.TestCase):
                 "context_expansion": {"records": None, "estimated_tokens": 9},
                 "error": {"kind": "runner_exit", "detail": None},
             },
+            {
+                "schema_version": "1.0.0", "kind": "local-atlas-ab-observation",
+                "task_id": "task-a", "task_identity_sha256": "5" * 64,
+                "repetition": 1, "arm": "on", "arm_workspace": "arms/task-a/1/on",
+                "model": "fixture-local", "timeout_seconds": 5.0, **identity,
+                "exit_code": 0,
+                "accepted_outcome": {"accepted": None, "state": "unavailable"},
+                "elapsed_ms": None, "tokens": None, "tool_calls": 2,
+                "files_read": None, "source_bytes_read": 17, "atlas_route": "LIGHT",
+                "atlas_runtime_ms": 4, "context_expansion": None, "error": None,
+            },
         ]
         payload = "".join(json.dumps(row) + "\n" for row in records)
         self.source.write_text(payload, encoding="utf-8", newline="\n")
         manifest = {
-            "schema_version": "1.0.0",
-            "raw_sha256": hashlib.sha256(payload.encode("utf-8")).hexdigest(),
-            "raw_count": len(records),
+            "adapter": "fixture-json-stdio",
+            "adapter_identity_sha256": identity["adapter_identity_sha256"],
+            "campaign_identity_sha256": identity["campaign_identity_sha256"],
+            "command_display": ["python", "runner.py"],
+            "command_identity_sha256": identity["command_identity_sha256"],
             "expected_raw_count": len(records),
+            "max_tasks": 1,
+            "model": "fixture-local",
+            "model_identity_sha256": identity["model_identity_sha256"],
+            "raw_count": len(records),
+            "raw_sha256": hashlib.sha256(payload.encode("utf-8")).hexdigest(),
+            "repetitions": 1,
+            "schema_version": "1.0.0",
             "state": "complete",
+            "task_manifest": {"name": "tasks.json", "sha256": task_manifest_sha256},
+            "tasks": ["task-a"],
+            "timeout_seconds": 5.0,
         }
         (self.workspace / "harness-manifest.json").write_text(
             json.dumps(manifest), encoding="utf-8"
@@ -88,14 +131,134 @@ class BenchmarkEvidenceExportTests(unittest.TestCase):
         self.assertEqual(manifest["input"]["sha256"], hashlib.sha256(before).hexdigest())
         self.assertEqual(manifest["state"], "complete")
         self.assertEqual(manifest["counts"], summary["counts"])
+        self.assertEqual(manifest["missing_provenance"], [])
+        self.assertEqual(manifest["identity"]["kind"], "harness")
         for name in ("environment.json", "raw.json", "summary.json", "results.csv"):
             self.assertEqual(manifest["files"][name]["sha256"], hashlib.sha256((self.destination / name).read_bytes()).hexdigest())
         csv_rows = list(csv.DictReader(io.StringIO((self.destination / "results.csv").read_text(encoding="utf-8"))))
-        self.assertEqual([(row["task_id"], row["arm"]) for row in csv_rows], [("task-a", "off"), ("task-b", "on")])
+        self.assertEqual([(row["task_id"], row["arm"]) for row in csv_rows], [("task-a", "off"), ("task-a", "on")])
         self.assertEqual(csv_rows[0]["accepted"], "false")
         self.assertEqual(csv_rows[1]["accepted"], "<null>")
         for path in self.destination.iterdir():
             self.assertTrue(path.read_bytes().endswith(b"\n"))
+
+    def test_incomplete_harness_sidecar_is_partial_with_explicit_missing_provenance(
+        self,
+    ) -> None:
+        records = self.write_records()
+        raw = self.source.read_bytes()
+        (self.workspace / "harness-manifest.json").write_text(
+            json.dumps({
+                "schema_version": "1.0.0",
+                "raw_sha256": hashlib.sha256(raw).hexdigest(),
+                "raw_count": len(records),
+                "expected_raw_count": len(records),
+                "state": "complete",
+            }),
+            encoding="utf-8",
+        )
+
+        result = self.run_export()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        manifest = json.loads(
+            (self.destination / "manifest.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(manifest["state"], "partial")
+        self.assertEqual(
+            manifest["missing_provenance"],
+            ["harness_identity", "harness_pairing"],
+        )
+        self.assertNotIn("identity", manifest)
+
+    def test_invalid_harness_pairing_is_partial_with_explicit_missing_provenance(
+        self,
+    ) -> None:
+        records = self.write_records()
+        records[1]["arm"] = "off"
+        records[1]["arm_workspace"] = "arms/task-a/1/off"
+        payload = "".join(json.dumps(row) + "\n" for row in records)
+        self.source.write_text(payload, encoding="utf-8", newline="\n")
+        sidecar_path = self.workspace / "harness-manifest.json"
+        sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+        sidecar["raw_sha256"] = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+        sidecar_path.write_text(json.dumps(sidecar), encoding="utf-8")
+
+        result = self.run_export()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        manifest = json.loads(
+            (self.destination / "manifest.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(manifest["state"], "partial")
+        self.assertEqual(manifest["missing_provenance"], ["harness_pairing"])
+        self.assertNotIn("identity", manifest)
+
+    def test_rejects_consistent_but_recomputation_wrong_campaign_identity(
+        self,
+    ) -> None:
+        records = self.write_records()
+        wrong_campaign_identity = "f" * 64
+        for record in records:
+            record["campaign_identity_sha256"] = wrong_campaign_identity
+        payload = "".join(json.dumps(row) + "\n" for row in records)
+        self.source.write_text(payload, encoding="utf-8", newline="\n")
+        sidecar_path = self.workspace / "harness-manifest.json"
+        sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+        sidecar["campaign_identity_sha256"] = wrong_campaign_identity
+        sidecar["raw_sha256"] = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+        sidecar_path.write_text(json.dumps(sidecar), encoding="utf-8")
+
+        result = self.run_export()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.destination.exists())
+
+    def test_rejects_task_id_outside_harness_contract(self) -> None:
+        records = self.write_records()
+        for record in records:
+            record["task_id"] = "../task-a"
+            record["arm_workspace"] = (
+                f"arms/../task-a/{record['repetition']}/{record['arm']}"
+            )
+        payload = "".join(json.dumps(row) + "\n" for row in records)
+        self.source.write_text(payload, encoding="utf-8", newline="\n")
+        sidecar_path = self.workspace / "harness-manifest.json"
+        sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+        sidecar["tasks"] = ["../task-a"]
+        campaign_material = {
+            "adapter_identity_sha256": sidecar["adapter_identity_sha256"],
+            "command_identity_sha256": sidecar["command_identity_sha256"],
+            "max_tasks": sidecar["max_tasks"],
+            "model_identity_sha256": sidecar["model_identity_sha256"],
+            "repetitions": sidecar["repetitions"],
+            "task_manifest_sha256": sidecar["task_manifest"]["sha256"],
+            "tasks": sidecar["tasks"],
+            "timeout_seconds": sidecar["timeout_seconds"],
+        }
+        campaign_identity = hashlib.sha256(
+            (
+                json.dumps(
+                    campaign_material,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                )
+                + "\n"
+            ).encode("utf-8")
+        ).hexdigest()
+        sidecar["campaign_identity_sha256"] = campaign_identity
+        for record in records:
+            record["campaign_identity_sha256"] = campaign_identity
+        payload = "".join(json.dumps(row) + "\n" for row in records)
+        self.source.write_text(payload, encoding="utf-8", newline="\n")
+        sidecar["raw_sha256"] = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+        sidecar_path.write_text(json.dumps(sidecar), encoding="utf-8")
+
+        result = self.run_export()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.destination.exists())
 
     def test_harness_identity_sidecar_mismatch_is_rejected_before_destination(self) -> None:
         records = self.write_records()

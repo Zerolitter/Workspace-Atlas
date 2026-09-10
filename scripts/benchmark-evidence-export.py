@@ -33,6 +33,7 @@ CSV_COLUMNS = (
 
 CSV_NULL_TOKEN = "<null>"
 CSV_MISSING_TOKEN = "<missing>"
+TASK_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
 HOME_OR_ABSOLUTE = re.compile(
     r"(?:^[A-Za-z]:[\\/]|^/|^\\\\|^~|%(?:USERPROFILE|HOME)%|"
     r"\$(?:HOME|USERPROFILE)|/(?:home|Users)/|[\\/]Users[\\/])",
@@ -195,6 +196,170 @@ def _canonical_bytes(value: Any) -> bytes:
 def _hash(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
+def _valid_sha256(value: Any) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def _harness_provenance(
+    manifest: dict[str, Any],
+    records: list[dict[str, Any]],
+) -> list[str]:
+    missing: set[str] = set()
+    digest_fields = (
+        "adapter_identity_sha256",
+        "campaign_identity_sha256",
+        "command_identity_sha256",
+        "model_identity_sha256",
+    )
+    for field in digest_fields:
+        if field in manifest and not _valid_sha256(manifest[field]):
+            raise ExportError("harness identity hash is malformed")
+
+    tasks = manifest.get("tasks")
+    repetitions = manifest.get("repetitions")
+    maximum = manifest.get("max_tasks")
+    timeout = manifest.get("timeout_seconds")
+    task_manifest = manifest.get("task_manifest")
+    if (
+        isinstance(task_manifest, dict)
+        and "sha256" in task_manifest
+        and not _valid_sha256(task_manifest["sha256"])
+    ):
+        raise ExportError("harness task manifest hash is malformed")
+    if isinstance(tasks, list) and any(
+        not isinstance(task, str) or TASK_ID.fullmatch(task) is None
+        for task in tasks
+    ):
+        raise ExportError("harness task identity is malformed")
+    identity_complete = (
+        isinstance(manifest.get("adapter"), str)
+        and bool(manifest["adapter"])
+        and isinstance(manifest.get("model"), str)
+        and bool(manifest["model"])
+        and isinstance(manifest.get("command_display"), list)
+        and bool(manifest["command_display"])
+        and all(isinstance(argument, str) for argument in manifest["command_display"])
+        and all(_valid_sha256(manifest.get(field)) for field in digest_fields)
+        and isinstance(maximum, int)
+        and not isinstance(maximum, bool)
+        and 1 <= maximum <= 20
+        and isinstance(repetitions, int)
+        and not isinstance(repetitions, bool)
+        and 1 <= repetitions <= 10
+        and isinstance(timeout, (int, float))
+        and not isinstance(timeout, bool)
+        and 0 < timeout <= 3600
+        and isinstance(tasks, list)
+        and bool(tasks)
+        and all(TASK_ID.fullmatch(task) is not None for task in tasks)
+        and len(tasks) == len(set(tasks))
+        and len(tasks) <= maximum
+        and isinstance(task_manifest, dict)
+        and isinstance(task_manifest.get("name"), str)
+        and bool(task_manifest["name"])
+        and _valid_sha256(task_manifest.get("sha256"))
+    )
+    if not identity_complete:
+        missing.add("harness_identity")
+    else:
+        campaign_material = {
+            "adapter_identity_sha256": manifest["adapter_identity_sha256"],
+            "command_identity_sha256": manifest["command_identity_sha256"],
+            "max_tasks": maximum,
+            "model_identity_sha256": manifest["model_identity_sha256"],
+            "repetitions": repetitions,
+            "task_manifest_sha256": task_manifest["sha256"],
+            "tasks": tasks,
+            "timeout_seconds": timeout,
+        }
+        campaign_identity = _hash(
+            (
+                json.dumps(
+                    campaign_material,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                )
+                + "\n"
+            ).encode("utf-8")
+        )
+        if campaign_identity != manifest["campaign_identity_sha256"]:
+            raise ExportError("harness campaign identity contradiction")
+
+    expected_count = manifest.get("expected_raw_count")
+    if expected_count is None:
+        missing.add("harness_expected_count")
+    elif (
+        not isinstance(expected_count, int)
+        or isinstance(expected_count, bool)
+        or expected_count < 0
+    ):
+        raise ExportError("harness identity count or state mismatch")
+    elif identity_complete and expected_count != len(tasks) * repetitions * 2:
+        raise ExportError("harness identity count or state mismatch")
+
+    expected_pairs: list[tuple[str, int, str]] = []
+    if identity_complete:
+        expected_pairs = [
+            (task, repetition, arm)
+            for task in tasks
+            for repetition in range(1, repetitions + 1)
+            for arm in ("off", "on")
+        ]
+    observed_pairs: list[tuple[Any, Any, Any]] = []
+    task_identities: dict[str, str] = {}
+    pairing_complete = identity_complete
+    for record in records:
+        if (
+            record.get("schema_version") != SCHEMA_VERSION
+            or record.get("kind") != "local-atlas-ab-observation"
+        ):
+            raise ExportError("harness observation schema mismatch")
+        task_id = record.get("task_id")
+        repetition = record.get("repetition")
+        arm = record.get("arm")
+        observed_pairs.append((task_id, repetition, arm))
+        task_identity = record.get("task_identity_sha256")
+        if task_identity is not None and not _valid_sha256(task_identity):
+            raise ExportError("harness observation identity hash is malformed")
+        if (
+            not isinstance(task_id, str)
+            or TASK_ID.fullmatch(task_id) is None
+            or not isinstance(repetition, int)
+            or isinstance(repetition, bool)
+            or arm not in ("off", "on")
+            or record.get("arm_workspace")
+            != f"arms/{task_id}/{repetition}/{arm}"
+            or task_identity is None
+        ):
+            pairing_complete = False
+        if isinstance(task_id, str) and isinstance(task_identity, str):
+            prior_task_identity = task_identities.setdefault(task_id, task_identity)
+            if prior_task_identity != task_identity:
+                raise ExportError("harness observation identity contradiction")
+        for field in (*digest_fields, "model", "timeout_seconds"):
+            if field not in record or field not in manifest:
+                missing.add("harness_identity")
+            elif record[field] != manifest[field]:
+                raise ExportError("harness observation identity contradiction")
+
+    if identity_complete:
+        pairing_complete = (
+            pairing_complete
+            and observed_pairs == expected_pairs[:len(records)]
+            and len(records) <= len(expected_pairs)
+            and len(records) % 2 == 0
+        )
+        if manifest.get("state") == "complete":
+            pairing_complete = pairing_complete and len(records) == len(expected_pairs)
+    if not pairing_complete:
+        missing.add("harness_pairing")
+    return sorted(missing)
+
 
 def _identity_sidecar(
     source: Path,
@@ -255,19 +420,32 @@ def _identity_sidecar(
         raise ExportError("identity sidecar raw hash mismatch")
     if sidecar_kind == "harness":
         observed = value.get("raw_count")
-        expected = value.get("expected_raw_count", observed)
+        expected = value.get("expected_raw_count")
         state = value.get("state")
-        if (
+        if state not in ("partial", "complete"):
+            raise ExportError("harness identity count or state mismatch")
+        missing = _harness_provenance(value, records)
+        if observed is None:
+            missing.append("harness_expected_count")
+        elif (
             not isinstance(observed, int)
             or isinstance(observed, bool)
             or observed != record_count
-            or not isinstance(expected, int)
-            or isinstance(expected, bool)
-            or observed > expected
-            or state not in ("partial", "complete")
-            or (state == "complete" and observed != expected)
         ):
             raise ExportError("harness identity count or state mismatch")
+        if expected is not None and (
+            observed is not None
+            and (
+                observed > expected
+                or (state == "complete" and observed != expected)
+            )
+        ):
+            raise ExportError("harness identity count or state mismatch")
+        if missing:
+            return "partial", {
+                "kind": "missing_harness_provenance",
+                "missing": sorted(set(missing)),
+            }
     else:
         attempted = value.get("attempted_records")
         missing = value.get("missing_records")
@@ -491,6 +669,8 @@ def _missing_provenance(
         kind = identity.get("kind")
         if kind == "missing_harness_identity":
             missing.extend(["harness_identity", "harness_expected_count", "harness_pairing"])
+        elif kind == "missing_harness_provenance":
+            missing.extend(identity.get("missing", []))
         elif kind == "missing_capacity_identity":
             missing.append("capacity_identity")
         elif kind and kind != "harness" and kind != "capacity":
