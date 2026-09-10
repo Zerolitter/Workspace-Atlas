@@ -1,0 +1,296 @@
+{
+  "schema_version": "1.0.0",
+  "dataset": {
+    "generator": "tests/fixtures/pilot/generate_fixture.py",
+    "fixture_manifest": "fixture_manifest.json",
+    "generation": "fresh_per_run",
+    "provider_state": "builtin_deterministic"
+  },
+  "procedure": {
+    "warmups": 5,
+    "warm_samples": 100,
+    "cold_samples": 20,
+    "repetitions": 3,
+    "percentile_method": "nearest_rank"
+  },
+  "profiles": [
+    {
+      "name": "small",
+      "records": 30,
+      "source_bytes": 12000,
+      "estimated_tokens": 4000,
+      "relationship_depth": 1,
+      "work_units": 5000,
+      "uncertainty_reserve_percent": 15,
+      "candidate_warm_p95_ms": 150,
+      "wall_cancellation_ms": 1000
+    },
+    {
+      "name": "standard",
+      "records": 60,
+      "source_bytes": 40000,
+      "estimated_tokens": 8000,
+      "relationship_depth": 2,
+      "work_units": 20000,
+      "uncertainty_reserve_percent": 12,
+      "candidate_warm_p95_ms": 250,
+      "wall_cancellation_ms": 5000
+    },
+    {
+      "name": "audit",
+      "records": 250,
+      "source_bytes": 120000,
+      "estimated_tokens": 24000,
+      "relationship_depth": 4,
+      "work_units": 100000,
+      "uncertainty_reserve_percent": 15,
+      "candidate_warm_p95_ms": 2000,
+      "wall_cancellation_ms": 10000
+    }
+  ],
+  "acceptance": {
+    "correctness_required": true,
+    "deterministic_identity_required": true,
+    "bounds_required": true,
+    "prohibited_hot_path_work_required": true,
+    "latency_breach_repetitions": 2,
+    "baseline_repetitions": 3,
+    "relative_regression_fraction": 0.15,
+    "relative_regression_mad_multiplier": 2.0,
+    "candidate_budgets_are_public_slo": false,
+    "cold_latency_advisory": true
+  },
+  "estimator": {
+    "name": "utf8_bytes_div_4_ceiling",
+    "version": "1.0.0"
+  },
+  "experiment_bundle": {
+    "schema_version": "1.0.0",
+    "experiments": [
+      {
+        "id": "task-kinds",
+        "independent_variable": "task",
+        "control": {
+          "task_kind": "behavior_change",
+          "profile": "standard",
+          "representation": "relationship_preserving",
+          "serving_state": "ready",
+          "graph_scale": 1
+        },
+        "candidate": {
+          "task_kind": "api_change",
+          "profile": "standard",
+          "representation": "relationship_preserving",
+          "serving_state": "ready",
+          "graph_scale": 1
+        },
+        "accepted_outcome_hash": "c242def3c4223ab3a94b9c14291c8580950854b6fe0147513d9ea18952eb2b12"
+      },
+      {
+        "id": "review-task",
+        "independent_variable": "task",
+        "control": {
+          "task_kind": "behavior_change",
+          "profile": "standard",
+          "representation": "relationship_preserving",
+          "serving_state": "ready",
+          "graph_scale": 1
+        },
+        "candidate": {
+          "task_kind": "review",
+          "profile": "standard",
+          "representation": "relationship_preserving",
+          "serving_state": "ready",
+          "graph_scale": 1
+        },
+        "accepted_outcome_hash": "c242def3c4223ab3a94b9c14291c8580950854b6fe0147513d9ea18952eb2b12"
+      },
+      {
+        "id": "profiles",
+        "independent_variable": "profile",
+        "control": {
+          "task_kind": "behavior_change",
+          "profile": "small",
+          "representation": "relationship_preserving",
+          "serving_state": "ready",
+          "graph_scale": 1
+        },
+        "candidate": {
+          "task_kind": "behavior_change",
+          "profile": "audit",
+          "representation": "relationship_preserving",
+          "serving_state": "ready",
+          "graph_scale": 1
+        },
+        "accepted_outcome_hash": "c242def3c4223ab3a94b9c14291c8580950854b6fe0147513d9ea18952eb2b12"
+      },
+      {
+        "id": "representations",
+        "independent_variable": "representation",
+        "control": {
+          "task_kind": "behavior_change",
+          "profile": "standard",
+          "representation": "flat",
+          "serving_state": "ready",
+          "graph_scale": 1
+        },
+        "candidate": {
+          "task_kind": "behavior_change",
+          "profile": "standard",
+          "representation": "relationship_preserving",
+          "serving_state": "ready",
+          "graph_scale": 1
+        },
+        "accepted_outcome_hash": "c242def3c4223ab3a94b9c14291c8580950854b6fe0147513d9ea18952eb2b12"
+      },
+      {
+        "id": "serving-fallback",
+        "independent_variable": "fallback",
+        "control": {
+          "task_kind": "behavior_change",
+          "profile": "standard",
+          "representation": "relationship_preserving",
+          "serving_state": "ready",
+          "graph_scale": 1
+        },
+        "candidate": {
+          "task_kind": "behavior_change",
+          "profile": "standard",
+          "representation": "relationship_preserving",
+          "serving_state": "direct_truth_fallback",
+          "graph_scale": 1
+        },
+        "accepted_outcome_hash": "c242def3c4223ab3a94b9c14291c8580950854b6fe0147513d9ea18952eb2b12"
+      },
+      {
+        "id": "graph-scale-10x",
+        "independent_variable": "graph_scale",
+        "control": {
+          "task_kind": "behavior_change",
+          "profile": "standard",
+          "representation": "relationship_preserving",
+          "serving_state": "ready",
+          "graph_scale": 1
+        },
+        "candidate": {
+          "task_kind": "behavior_change",
+          "profile": "standard",
+          "representation": "relationship_preserving",
+          "serving_state": "ready",
+          "graph_scale": 10
+        },
+        "accepted_outcome_hash": "c242def3c4223ab3a94b9c14291c8580950854b6fe0147513d9ea18952eb2b12"
+      }
+    ]
+  },
+  "capacity": {
+    "schema_version": "1.0.0",
+    "manifest_directory": "tests/fixtures/capacity",
+    "accepted_outcome_contract": {
+      "path": "accepted-outcomes-v2.json",
+      "file_sha256": "f6f50330b1103c10804654cf702f4970b0e85beb44f28553b92458a12ca58b11"
+    },
+    "raw_evidence_relative_root": "target/atlas-bench/capacity",
+    "maximum_raw_records": 135000,
+    "strata": [
+      {
+        "name": "repo-small-v1",
+        "manifest": "repo-small-v1.json",
+        "file_sha256": "883e84026b956e97ea42550802e86dc3ffd748d45b50ad84fbcff84921578cb6",
+        "manifest_sha256": "6209c40d6345987d4373acf29ed6ca34056c718b7a0b87cead74a87952260549",
+        "eligible_files": 128,
+        "indexed_files": 128,
+        "changed_files": 2
+      },
+      {
+        "name": "repo-medium-v1",
+        "manifest": "repo-medium-v1.json",
+        "file_sha256": "aee43db257ea8b78a1c5aa690f938d5bd17f9bf1c069cf0caf528d442b97d858",
+        "manifest_sha256": "c4160323a9930d92190854427d24debfaa2e81c9a8e165b98b9e0fcb5e648a9e",
+        "eligible_files": 1024,
+        "indexed_files": 1024,
+        "changed_files": 11
+      },
+      {
+        "name": "repo-large-v1",
+        "manifest": "repo-large-v1.json",
+        "file_sha256": "0da921308656d30a2183274a75dede42b4703b72923a919a27786a8b6ecf80d1",
+        "manifest_sha256": "81f8b8672d6a0e0aa237f1fbe1d73bcb86c89f3b24ed33eb463389c0c2e7d33b",
+        "eligible_files": 8192,
+        "indexed_files": 8192,
+        "changed_files": 82
+      }
+    ],
+    "phases": [
+      "cold-initialization-reconcile",
+      "no-change-reconcile",
+      "fixed-incremental-reconcile",
+      "ready-serving-query-compiler",
+      "truth-fallback-query-compiler",
+      "capability-discovery",
+      "direct-route-compiler",
+      "light-route-compiler",
+      "progressive-deep-route-compiler",
+      "catalogue-growth"
+    ],
+    "provider_conditions": [
+      "builtin-only",
+      "typescript-only",
+      "rust-only",
+      "combined"
+    ],
+    "outcome_states": [
+      "success",
+      "timeout",
+      "absent",
+      "unsupported",
+      "degraded",
+      "cancelled",
+      "failed"
+    ],
+    "canonical_identity_fields": [
+      "dataset_name",
+      "manifest_sha256",
+      "target_identity",
+      "expected_accepted_outcome_hash",
+      "expected_ready_versus_truth_result_hash",
+      "phase",
+      "provider_condition",
+      "profile",
+      "repetition",
+      "sample_class",
+      "sample_index",
+      "deterministic_work_units",
+      "correctness",
+      "accepted_outcome",
+      "ready_versus_truth"
+    ],
+    "transient_evidence_fields": [
+      "wall_duration_ms",
+      "provider_install_duration_ms",
+      "provider_download_duration_ms",
+      "atlas_runtime_duration_ms",
+      "cache_state",
+      "retry_count",
+      "route_attempts",
+      "cancellation"
+    ],
+    "setup_fields": [
+      "provider_install_duration_ms",
+      "provider_download_duration_ms"
+    ],
+    "atlas_work_fields": [
+      "atlas_runtime_duration_ms",
+      "deterministic_work_units"
+    ],
+    "limitations": [
+      "private dataset labels are not supported limits or public SLOs",
+      "planned records are not execution or capacity evidence",
+      "wall time, cache state, retries, route attempts, and cancellation are transient",
+      "non-success records remain explicit and durations remain null when unobserved",
+      "provider installation and download are separate from Atlas runtime and work units",
+      "rust-analyzer is not applicable for repo-small-v1 and optional/degraded otherwise",
+      "DEEP runs only in the dedicated progressive response-lifetime condition; DIRECT and LIGHT remain independent valid outcomes"
+    ]
+  }
+}

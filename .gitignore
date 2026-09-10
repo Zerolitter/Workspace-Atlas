@@ -1,0 +1,38 @@
+# Rust build artifacts
+/target/
+*.pdb
+/*.exe
+
+# Workspace Atlas local catalogues and portable state
+/.workspace_atlas/
+/.atlas/
+
+# External semantic-provider output
+/.atlas-provider-tmp/
+/provider-output/
+
+# Generated benchmark fixtures
+/_generated_fixture/
+/atlas_fixture/
+
+# Local configuration
+/config/workspace-atlas.local.toml
+
+# Local Orca/OMP workspace state
+/.orca/
+/.omp/
+
+# Local archives and dependency trees
+/*.7z
+/*.zip
+/specs/roadmap-v15-v20/Data-for-analysis.7z
+/node_modules/
+__pycache__/
+*.py[cod]
+
+# Editors and operating systems
+/.vscode/
+/.idea/
+*.swp
+.DS_Store
+Thumbs.db

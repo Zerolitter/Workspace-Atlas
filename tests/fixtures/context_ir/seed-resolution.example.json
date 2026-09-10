@@ -1,0 +1,32 @@
+{
+  "fts_candidate_limit": 2,
+  "canonical": {
+    "candidate_count": 1,
+    "selection_reason": "EXACT_SYMBOL_MATCH",
+    "evidence_state": "supported"
+  },
+  "path": {
+    "candidate_count": 1,
+    "selection_reason": "EXACT_PATH_MATCH",
+    "evidence_state": "verified"
+  },
+  "qualified": {
+    "candidate_count": 1,
+    "selection_reason": "EXACT_SYMBOL_MATCH",
+    "evidence_state": "supported"
+  },
+  "ambiguous_display": {
+    "candidate_count": 2,
+    "role": "UNCERTAINTY",
+    "evidence_state": "ambiguous",
+    "reason": "ambiguous_seed"
+  },
+  "bounded_fts": {
+    "candidate_count": 2,
+    "selected": 2,
+    "role": "UNCERTAINTY",
+    "evidence_state": "unresolved",
+    "omitted": 1,
+    "reason": "fts_candidate_limit"
+  }
+}

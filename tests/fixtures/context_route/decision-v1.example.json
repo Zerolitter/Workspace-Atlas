@@ -1,0 +1,116 @@
+{
+  "state": "completed",
+  "schema_version": "context-execution-v1.0.0",
+  "decision": {
+    "schema_version": "context-route-v1.0.0",
+    "request": {
+      "schema_version": "context-route-v1.0.0",
+      "normalized_task_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+      "declared_kind": "bug_fix",
+      "classifier_kind": "bug_fix",
+      "classifier_version": "task-classifier-v1.0.0",
+      "explicit_seeds": {
+        "digest": "2222222222222222222222222222222222222222222222222222222222222222",
+        "path_count": 0,
+        "symbol_count": 0
+      },
+      "caller_capabilities": {
+        "identity_lookup": "satisfied",
+        "exact_source": "satisfied"
+      },
+      "atlas_intent": "allow",
+      "route_floor": "DIRECT",
+      "route_ceiling": "ATLAS_DEEP",
+      "capability_profile": null,
+      "cost_profile": null,
+      "profile_registry_digest": null,
+      "starting_generation": {
+        "state": "observed",
+        "generation_id": "gen_01JTEST"
+      },
+      "light_operations": [
+        {
+          "operation": "query",
+          "version": "query-v1.0.0"
+        },
+        {
+          "operation": "source_reference",
+          "version": "source-reference-v1.0.0"
+        },
+        {
+          "operation": "context_packet",
+          "version": "context-packet-v1.0.0"
+        }
+      ],
+      "deep_contracts": {
+        "planner_version": "planner-v2.0.0",
+        "projection_version": "projection-v2.0.0",
+        "context_ir_version": "2.0.0",
+        "estimator_version": "context-estimator-v1.0.0"
+      },
+      "deep_budget": {
+        "max_records": 50,
+        "max_source_bytes": 65536,
+        "max_estimated_tokens": 16384,
+        "max_depth": 4,
+        "max_work_units": 10000,
+        "uncertainty_reserve_percent": 12,
+        "budget_digest": "c31918f43ccf6fbba56bd1868fe1c41871fa6601af1066cb7ea05663700bb29f"
+      }
+    },
+    "effective_floor": "DIRECT",
+    "effective_ceiling": "ATLAS_DEEP",
+    "requested_capabilities": {
+      "identity_lookup": "satisfied",
+      "exact_source": "satisfied"
+    },
+    "deep_budget_digest": "c31918f43ccf6fbba56bd1868fe1c41871fa6601af1066cb7ea05663700bb29f",
+    "initial_route": "DIRECT",
+    "signals": [
+      "caller_capabilities_satisfied",
+      "atlas_intent_allow",
+      "route_floor_direct",
+      "route_ceiling_deep",
+      "identity_or_source_requested",
+      "starting_generation_observed"
+    ],
+    "reasons": [
+      "caller_context_sufficient"
+    ],
+    "starting_generation": {
+      "state": "observed",
+      "generation_id": "gen_01JTEST"
+    },
+    "policy_version": "context-route-v1.0.0",
+    "decision_hash": "5633112de214314cf74f8f4f7b2cc30d8fd47942ad8ec5c1d6a5b5aebaa987c4"
+  },
+  "attempts": [
+    {
+      "attempt_id": "attempt-1",
+      "route": "DIRECT",
+      "state": "completed",
+      "deficits": [],
+      "counters": {
+        "atlas_calls": 0,
+        "records": 0,
+        "source_bytes": 0,
+        "estimated_tokens": 0,
+        "work_units": 0
+      },
+      "elapsed_micros": 0
+    }
+  ],
+  "final_route": "DIRECT",
+  "payload": {
+    "payload_type": "direct_none"
+  },
+  "counters": {
+    "atlas_calls": 0,
+    "records": 0,
+    "source_bytes": 0,
+    "estimated_tokens": 0,
+    "work_units": 0
+  },
+  "diagnostics": [],
+  "materialization": null
+}

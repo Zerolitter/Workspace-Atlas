@@ -1,0 +1,22 @@
+{
+  "schema_version": "1.0.0",
+  "task_session_id": "task_example_001",
+  "workspace_id": "ws_example",
+  "start_generation_id": "gen_1843",
+  "end_generation_id": "gen_1844",
+  "task_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "normalized_goal_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+  "raw_task_retention": "hash_only",
+  "raw_task": null,
+  "task_kind": "behavior_change",
+  "state": "completed",
+  "created_at": "2026-08-29T18:00:00Z",
+  "completed_at": "2026-08-29T18:30:00Z",
+  "planner_policy_version": "planner-v1",
+  "context_ir_version": "1.0.0",
+  "accepted": true,
+  "tests_passed": true,
+  "outcome_code": "accepted_change",
+  "start_tree_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "end_tree_hash": "1111111111111111111111111111111111111111111111111111111111111111"
+}

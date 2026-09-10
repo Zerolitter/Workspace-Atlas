@@ -1,0 +1,42 @@
+{
+  "schema_version": "1.0.0",
+  "benchmark_manifest": "tests/fixtures/context_yield/benchmark-scenario.json",
+  "profiles": [
+    {
+      "name": "small",
+      "version": "h3-a-1.0.0",
+      "records": 30,
+      "source_bytes": 12000,
+      "estimated_tokens": 4000,
+      "relationship_depth": 1,
+      "work_units": 5000,
+      "uncertainty_reserve_percent": 15,
+      "candidate_warm_p95_ms": 150,
+      "wall_cancellation_ms": 1000
+    },
+    {
+      "name": "standard",
+      "version": "h3-a-1.0.0",
+      "records": 60,
+      "source_bytes": 40000,
+      "estimated_tokens": 8000,
+      "relationship_depth": 2,
+      "work_units": 20000,
+      "uncertainty_reserve_percent": 12,
+      "candidate_warm_p95_ms": 250,
+      "wall_cancellation_ms": 5000
+    },
+    {
+      "name": "audit",
+      "version": "h3-a-1.0.0",
+      "records": 250,
+      "source_bytes": 120000,
+      "estimated_tokens": 24000,
+      "relationship_depth": 4,
+      "work_units": 100000,
+      "uncertainty_reserve_percent": 15,
+      "candidate_warm_p95_ms": 2000,
+      "wall_cancellation_ms": 10000
+    }
+  ]
+}

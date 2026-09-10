@@ -1,0 +1,108 @@
+{
+  "schema_version": "1.0.0",
+  "symbols": [
+    {
+      "path": "src/controller/connection.ts",
+      "qualified_name": "ConnectionController"
+    },
+    {
+      "path": "src/controller/connection.ts",
+      "qualified_name": "ConnectionController.connect"
+    },
+    {
+      "path": "src/controller/open-socket.ts",
+      "qualified_name": "openSocket"
+    },
+    {
+      "path": "src/core/retry-policy.ts",
+      "qualified_name": "computeDelay"
+    },
+    {
+      "path": "src/contracts/controller.ts",
+      "qualified_name": "Controller"
+    }
+  ],
+  "relationships": [
+    {
+      "source": [
+        "src/controller/connection.ts",
+        "ConnectionController"
+      ],
+      "type": "extends",
+      "target": [
+        "src/core/base-controller.ts",
+        "BaseController"
+      ]
+    },
+    {
+      "source": [
+        "src/controller/connection.ts",
+        "ConnectionController"
+      ],
+      "type": "implements",
+      "target": [
+        "src/contracts/controller.ts",
+        "Controller"
+      ]
+    },
+    {
+      "source": [
+        "src/controller/connection.ts",
+        "ConnectionController.connect"
+      ],
+      "type": "calls_composed",
+      "target": [
+        "src/controller/open-socket.ts",
+        "openSocket"
+      ]
+    },
+    {
+      "source": [
+        "src/controller/connection.ts",
+        "ConnectionController.scheduleReconnect"
+      ],
+      "type": "calls_composed",
+      "target": [
+        "src/core/retry-policy.ts",
+        "computeDelay"
+      ]
+    },
+    {
+      "source": [
+        "src/runtime/reference-only.ts",
+        "visibleLabel"
+      ],
+      "type": "references_not_calls",
+      "target": [
+        "src/core/retry-policy.ts",
+        "retryLabel"
+      ]
+    },
+    {
+      "source": [
+        "tests/connection.test.ts",
+        "connectionTest"
+      ],
+      "type": "references",
+      "target": [
+        "src/controller/connection.ts",
+        "ConnectionController"
+      ]
+    }
+  ],
+  "unresolved": [
+    {
+      "path": "src/plugins/load.ts",
+      "reason_code": "dynamic_dispatch",
+      "raw": "registry[name]"
+    }
+  ],
+  "ambiguity_guard": {
+    "display_name": "reset",
+    "definitions": [
+      "src/controller/state.ts",
+      "src/other/reset.ts"
+    ],
+    "selected_by_import": "src/controller/state.ts"
+  }
+}

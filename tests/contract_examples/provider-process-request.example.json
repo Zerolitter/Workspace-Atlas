@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0.0",
+  "execution_id": "pex_demo_0001",
+  "workspace_id": "ws_demo",
+  "candidate_generation_id": "gen_demo_0002",
+  "provider": {
+    "name": "scip-typescript",
+    "version": "0.4.0",
+    "fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "configuration_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  },
+  "scope": {
+    "kind": "project",
+    "key": "project:tsconfig.json",
+    "canonical_root": ".",
+    "primary_manifest": "tsconfig.json",
+    "input_manifest_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+  },
+  "input_fingerprint": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "output": {
+    "format": "scip",
+    "path": "C:/<runtime-output>/pex_demo_0001/index.scip"
+  },
+  "budget": {
+    "timeout_ms": 120000,
+    "max_stdout_bytes": 1048576,
+    "max_stderr_bytes": 1048576,
+    "max_output_bytes": 536870912
+  }
+}

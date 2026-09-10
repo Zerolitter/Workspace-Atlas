@@ -1,0 +1,514 @@
+{
+  "legacy_v1": {
+    "schema_version": "1.0.0",
+    "context_id": "ctx_example_001",
+    "workspace": {
+      "workspace_id": "ws_example",
+      "generation_id": "gen_1843",
+      "generation_sequence": 1843,
+      "source_tree_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "configuration_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+      "provider_set_hash": "2222222222222222222222222222222222222222222222222222222222222222",
+      "serving_generation_id": "serve_gen_1843"
+    },
+    "task": {
+      "task_session_id": "task_example_001",
+      "task_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "normalized_goal_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+      "task_kind": "behavior_change",
+      "kind_source": "declared",
+      "kind_rule_id": null,
+      "seed_paths": [
+        "src/controller/connection.ts"
+      ],
+      "seed_symbols": [
+        "ConnectionController.scheduleReconnect"
+      ]
+    },
+    "policy": {
+      "planner_policy_version": "planner-v1",
+      "projection_policy_version": "projection-v1",
+      "budget_profile": "standard",
+      "deterministic": true
+    },
+    "status": {
+      "working_set_status": "partial",
+      "reasons": [
+        "dynamic adapter relationship unresolved"
+      ],
+      "serving_fallback": false
+    },
+    "working_set": [
+      {
+        "item_id": "item_primary",
+        "entity_kind": "symbol",
+        "entity_id": "symbol:ConnectionController.scheduleReconnect",
+        "role": "PRIMARY_IMPLEMENTATION",
+        "selection_reason": "EXPLICIT_SEED",
+        "origin_id": null,
+        "distance": 0,
+        "rank": 0,
+        "evidence": {
+          "state": "verified",
+          "confidence": 1.0,
+          "provider_fingerprint": "2222222222222222222222222222222222222222222222222222222222222222",
+          "source_revision_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+          "generation_id": "gen_1843",
+          "preferred": true,
+          "alternative_count": 1
+        },
+        "cost": {
+          "metadata_bytes": 380,
+          "source_bytes": 640,
+          "estimated_tokens": 250
+        },
+        "source": {
+          "path": "src/controller/connection.ts",
+          "start_byte": 1800,
+          "end_byte": 2440,
+          "indexed_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+          "observed_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+          "verification_status": "verified"
+        }
+      }
+    ],
+    "relationships": [
+      {
+        "relationship_id": "rel_1",
+        "source_entity_id": "symbol:ConnectionController.scheduleReconnect",
+        "target_entity_id": "symbol:setConnectionState",
+        "relationship_type": "calls",
+        "resolution_state": "resolved_symbol",
+        "evidence": {
+          "state": "resolved",
+          "confidence": 1.0,
+          "provider_fingerprint": "2222222222222222222222222222222222222222222222222222222222222222",
+          "source_revision_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+          "generation_id": "gen_1843",
+          "preferred": true,
+          "alternative_count": 0
+        }
+      }
+    ],
+    "effects": [],
+    "uncertainty": [
+      {
+        "code": "dynamic_adapter_unresolved",
+        "severity": "warning",
+        "message": "A dynamic adapter target remains unresolved.",
+        "entity_ids": [
+          "symbol:loadAdapter"
+        ]
+      }
+    ],
+    "coverage": {
+      "eligible": 121,
+      "complete": 117,
+      "partial": 1,
+      "unsupported": 1,
+      "excluded": 2,
+      "failed": 0,
+      "claim_strength": "bounded",
+      "details": [
+        "TypeScript semantic coverage complete for selected scope."
+      ]
+    },
+    "omissions": {
+      "candidates_considered": 28,
+      "selected": 11,
+      "omitted": 17,
+      "truncated": true,
+      "by_reason": {
+        "token_budget": 9,
+        "depth": 5,
+        "low_value": 3
+      }
+    },
+    "validation_plan": [
+      {
+        "kind": "test",
+        "target": "tests/controller/reconnect.test.ts",
+        "reason": "Direct test contract for the modified behavior.",
+        "required": true
+      }
+    ],
+    "cost": {
+      "max_records": 60,
+      "selected_records": 11,
+      "max_source_bytes": 40000,
+      "selected_source_bytes": 12200,
+      "max_estimated_tokens": 10000,
+      "selected_estimated_tokens": 6420,
+      "soft_latency_ms": 50,
+      "hard_latency_ms": 200,
+      "elapsed_ms": 42
+    },
+    "context_hash": "2222222222222222222222222222222222222222222222222222222222222222"
+  },
+  "deep_v2": {
+    "schema_version": "2.0.0",
+    "context_id": "ctx_v2_example_001",
+    "workspace": {
+      "workspace_id": "ws_example",
+      "generation_id": "gen_1843",
+      "generation_sequence": 1843,
+      "source_tree_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "configuration_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+      "provider_set_hash": "2222222222222222222222222222222222222222222222222222222222222222"
+    },
+    "task": {
+      "task_session_id": "task_v2_example_001",
+      "task_hash": "3333333333333333333333333333333333333333333333333333333333333333",
+      "normalized_goal_hash": "4444444444444444444444444444444444444444444444444444444444444444",
+      "task_kind": "behavior_change",
+      "kind_source": "declared",
+      "kind_rule_id": null,
+      "seed_paths": [
+        "src/controller/connection.ts"
+      ],
+      "seed_symbols": [
+        "ConnectionController.scheduleReconnect"
+      ]
+    },
+    "policy": {
+      "planner_policy_version": "planner-v2.0.0",
+      "projection_policy_version": "projection-v2.0.0",
+      "estimator_version": "context-estimator-v1.0.0",
+      "deterministic": true,
+      "semantic_budget": {
+        "max_records": 60,
+        "max_source_bytes": 40000,
+        "max_estimated_tokens": 10000,
+        "max_relationship_depth": 2,
+        "max_work_units": 500,
+        "uncertainty_reserve_percent": 10,
+        "budget_digest": "eb931d1d9b48fb3d8af2de25fa7b3378df6328dad304f9b16137ee556efa77ba"
+      }
+    },
+    "status": {
+      "working_set_status": "complete",
+      "role_sufficiency": [
+        {
+          "role": "PRIMARY_IMPLEMENTATION",
+          "required": true,
+          "state": "satisfied",
+          "evidence_item_ids": [
+            "item_primary"
+          ],
+          "reason": null
+        },
+        {
+          "role": "DIRECT_DEPENDENCY",
+          "required": false,
+          "state": "unavailable",
+          "evidence_item_ids": [],
+          "reason": "unavailable_evidence"
+        },
+        {
+          "role": "DIRECT_DEPENDENT",
+          "required": true,
+          "state": "satisfied",
+          "evidence_item_ids": [
+            "item_dependent"
+          ],
+          "reason": null
+        },
+        {
+          "role": "TYPE_CONTRACT",
+          "required": false,
+          "state": "unavailable",
+          "evidence_item_ids": [],
+          "reason": "unavailable_evidence"
+        },
+        {
+          "role": "TEST_CONTRACT",
+          "required": true,
+          "state": "satisfied",
+          "evidence_item_ids": [
+            "item_test"
+          ],
+          "reason": null
+        },
+        {
+          "role": "CONFIGURATION_INPUT",
+          "required": false,
+          "state": "unavailable",
+          "evidence_item_ids": [],
+          "reason": "unavailable_evidence"
+        },
+        {
+          "role": "EFFECT",
+          "required": true,
+          "state": "satisfied",
+          "evidence_item_ids": [
+            "item_effect"
+          ],
+          "reason": null
+        },
+        {
+          "role": "HISTORICAL_CONSTRAINT",
+          "required": false,
+          "state": "unavailable",
+          "evidence_item_ids": [],
+          "reason": "unavailable_evidence"
+        },
+        {
+          "role": "UNCERTAINTY",
+          "required": false,
+          "state": "unavailable",
+          "evidence_item_ids": [],
+          "reason": "unavailable_evidence"
+        },
+        {
+          "role": "VALIDATION_TARGET",
+          "required": true,
+          "state": "satisfied",
+          "evidence_item_ids": [
+            "item_validation"
+          ],
+          "reason": null
+        },
+        {
+          "role": "DOCUMENTATION",
+          "required": false,
+          "state": "unavailable",
+          "evidence_item_ids": [],
+          "reason": "unavailable_evidence"
+        }
+      ],
+      "exact_source": "satisfied",
+      "validation": "satisfied",
+      "reasons": []
+    },
+    "working_set": [
+      {
+        "item_id": "item_primary",
+        "entity_kind": "symbol",
+        "entity_id": "symbol:ConnectionController.scheduleReconnect",
+        "role": "PRIMARY_IMPLEMENTATION",
+        "selection_reason": "EXPLICIT_SEED",
+        "origin_id": null,
+        "distance": 0,
+        "rank": 0,
+        "evidence": {
+          "state": "verified",
+          "confidence": 1.0,
+          "provider_fingerprint": "2222222222222222222222222222222222222222222222222222222222222222",
+          "source_revision_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+          "generation_id": "gen_1843",
+          "preferred": true,
+          "alternative_count": 0
+        },
+        "cost": {
+          "metadata_bytes": 380,
+          "source_bytes": 640,
+          "estimated_tokens": 250
+        },
+        "source": {
+          "canonical_path": "src/controller/connection.ts",
+          "whole_file_sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+          "start_byte": 1800,
+          "end_byte": 2440,
+          "observed_sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+          "verification_status": "verified",
+          "canonical_root_confinement": "confined",
+          "revalidated_before_seal": true
+        }
+      },
+      {
+        "item_id": "item_dependent",
+        "entity_kind": "symbol",
+        "entity_id": "symbol:setConnectionState",
+        "role": "DIRECT_DEPENDENT",
+        "selection_reason": "TASK_RECIPE_REQUIREMENT",
+        "origin_id": "item_primary",
+        "distance": 1,
+        "rank": 1,
+        "evidence": {
+          "state": "supported",
+          "confidence": 0.9,
+          "provider_fingerprint": "2222222222222222222222222222222222222222222222222222222222222222",
+          "source_revision_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+          "generation_id": "gen_1843",
+          "preferred": true,
+          "alternative_count": 0
+        },
+        "cost": {
+          "metadata_bytes": 100,
+          "source_bytes": 0,
+          "estimated_tokens": 20
+        },
+        "source": null
+      },
+      {
+        "item_id": "item_test",
+        "entity_kind": "test",
+        "entity_id": "test:tests/controller/reconnect.test.ts",
+        "role": "TEST_CONTRACT",
+        "selection_reason": "TASK_RECIPE_REQUIREMENT",
+        "origin_id": "item_primary",
+        "distance": 1,
+        "rank": 2,
+        "evidence": {
+          "state": "supported",
+          "confidence": 0.9,
+          "provider_fingerprint": "2222222222222222222222222222222222222222222222222222222222222222",
+          "source_revision_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+          "generation_id": "gen_1843",
+          "preferred": true,
+          "alternative_count": 0
+        },
+        "cost": {
+          "metadata_bytes": 100,
+          "source_bytes": 0,
+          "estimated_tokens": 20
+        },
+        "source": null
+      },
+      {
+        "item_id": "item_effect",
+        "entity_kind": "symbol",
+        "entity_id": "symbol:ConnectionController.scheduleReconnect",
+        "role": "EFFECT",
+        "selection_reason": "TASK_RECIPE_REQUIREMENT",
+        "origin_id": "item_primary",
+        "distance": 1,
+        "rank": 3,
+        "evidence": {
+          "state": "supported",
+          "confidence": 0.9,
+          "provider_fingerprint": "2222222222222222222222222222222222222222222222222222222222222222",
+          "source_revision_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+          "generation_id": "gen_1843",
+          "preferred": true,
+          "alternative_count": 0
+        },
+        "cost": {
+          "metadata_bytes": 100,
+          "source_bytes": 0,
+          "estimated_tokens": 20
+        },
+        "source": null
+      },
+      {
+        "item_id": "item_validation",
+        "entity_kind": "test",
+        "entity_id": "test:tests/controller/reconnect.test.ts",
+        "role": "VALIDATION_TARGET",
+        "selection_reason": "TASK_RECIPE_REQUIREMENT",
+        "origin_id": "item_primary",
+        "distance": 1,
+        "rank": 4,
+        "evidence": {
+          "state": "supported",
+          "confidence": 0.9,
+          "provider_fingerprint": "2222222222222222222222222222222222222222222222222222222222222222",
+          "source_revision_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+          "generation_id": "gen_1843",
+          "preferred": true,
+          "alternative_count": 0
+        },
+        "cost": {
+          "metadata_bytes": 100,
+          "source_bytes": 0,
+          "estimated_tokens": 20
+        },
+        "source": null
+      }
+    ],
+    "relationships": [
+      {
+        "relationship_id": "rel_1",
+        "source_entity_id": "symbol:ConnectionController.scheduleReconnect",
+        "target_entity_id": "symbol:setConnectionState",
+        "relationship_type": "calls",
+        "resolution_state": "resolved_symbol",
+        "evidence": {
+          "state": "resolved",
+          "confidence": 1.0,
+          "provider_fingerprint": "2222222222222222222222222222222222222222222222222222222222222222",
+          "source_revision_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+          "generation_id": "gen_1843",
+          "preferred": true,
+          "alternative_count": 0
+        }
+      }
+    ],
+    "effects": [
+      {
+        "subject_entity_id": "symbol:ConnectionController.scheduleReconnect",
+        "effect_type": "connection_state_transition",
+        "phase": "observed",
+        "evidence": {
+          "state": "supported",
+          "confidence": 0.9,
+          "provider_fingerprint": "2222222222222222222222222222222222222222222222222222222222222222",
+          "source_revision_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+          "generation_id": "gen_1843",
+          "preferred": true,
+          "alternative_count": 0
+        }
+      }
+    ],
+    "temporal_constraints": {
+      "current_generation_id": "gen_1843",
+      "baseline_generation_id": "gen_1842",
+      "state": "verified_ancestor",
+      "evidence_item_ids": [
+        "item_primary"
+      ],
+      "omission_reason": null
+    },
+    "uncertainty": [],
+    "coverage": {
+      "eligible": 1,
+      "complete": 1,
+      "partial": 0,
+      "unsupported": 0,
+      "excluded": 0,
+      "failed": 0,
+      "claim_strength": "exhaustive_within_scope",
+      "deficits": []
+    },
+    "omissions": {
+      "candidates_considered": 5,
+      "selected": 5,
+      "omitted": 0,
+      "truncated": false,
+      "by_reason": {}
+    },
+    "validation_plan": [
+      {
+        "kind": "test",
+        "target_entity_id": "test:tests/controller/reconnect.test.ts",
+        "reason": "affected_test",
+        "required": true
+      }
+    ],
+    "evidence_lease": {
+      "generation_id": "gen_1843",
+      "dependencies": [
+        {
+          "kind": "planner_policy",
+          "key": "planner-v2.0.0",
+          "digest": "6666666666666666666666666666666666666666666666666666666666666666"
+        },
+        {
+          "kind": "source_digest",
+          "key": "src/controller/connection.ts",
+          "digest": "5555555555555555555555555555555555555555555555555555555555555555"
+        }
+      ]
+    },
+    "cost": {
+      "selected_records": 5,
+      "selected_source_bytes": 640,
+      "selected_estimated_tokens": 330,
+      "relationship_depth_reached": 1,
+      "work_units_consumed": 7,
+      "uncertainty_records_reserved": 6,
+      "uncertainty_records_selected": 0
+    },
+    "context_hash": "4afac2c1269a7f70747f93e0563ca0deff6eae69c77288609222520b41932a01"
+  }
+}

@@ -1,0 +1,105 @@
+{
+  "schema_version": "1.5.0",
+  "content": {
+    "report_id": "yield_v15_example",
+    "workspace_id": "ws_example",
+    "generation_id": "gen_example",
+    "task_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "task_kind": "bug_fix",
+    "planner_policy_version": "planner-v1.3",
+    "projection_policy_version": "projection-v1.3",
+    "estimator_policy_version": "estimator-v1",
+    "metric_policy_version": "context-yield-v1.5",
+    "accepted_outcome": {
+      "acceptance": "accepted",
+      "outcome_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "sample_size": 3,
+    "raw_measures": {
+      "samples": [
+        {
+          "context_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "working_set_size": 12,
+          "selected_source_bytes": 2048,
+          "selected_estimated_tokens": 512,
+          "serving_fallback": false,
+          "truncated": false
+        },
+        {
+          "context_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "working_set_size": 12,
+          "selected_source_bytes": 2048,
+          "selected_estimated_tokens": 512,
+          "serving_fallback": false,
+          "truncated": false
+        },
+        {
+          "context_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "working_set_size": 12,
+          "selected_source_bytes": 2048,
+          "selected_estimated_tokens": 512,
+          "serving_fallback": false,
+          "truncated": false
+        }
+      ],
+      "metrics": [
+        {
+          "name": "context_precision_observed",
+          "numerator": 8,
+          "denominator": 12,
+          "unit": "items",
+          "evidence_class": "atlas_observed",
+          "invalidity": null
+        },
+        {
+          "name": "context_precision_reported",
+          "numerator": 6,
+          "denominator": 12,
+          "unit": "items",
+          "evidence_class": "reported_use",
+          "invalidity": null
+        },
+        {
+          "name": "context_expansion_count",
+          "numerator": 2,
+          "denominator": 1,
+          "unit": "items",
+          "evidence_class": "observed_and_reported",
+          "invalidity": null
+        },
+        {
+          "name": "rediscovery_rate",
+          "numerator": 3,
+          "denominator": 8,
+          "unit": "requests",
+          "evidence_class": "atlas_observed",
+          "invalidity": null
+        },
+        {
+          "name": "source_efficiency_observed",
+          "numerator": 1536,
+          "denominator": 2048,
+          "unit": "bytes",
+          "evidence_class": "atlas_observed",
+          "invalidity": null
+        }
+      ]
+    },
+    "validity": {
+      "is_valid": true,
+      "observation_coverage": {
+        "observed_events": 8,
+        "eligible_events": 10,
+        "complete": false
+      },
+      "limitations": [
+        "partial_observation_coverage",
+        "small_sample_size"
+      ]
+    }
+  },
+  "execution": {
+    "run_id": "run_example",
+    "generated_at": "2026-09-02T00:00:00.000Z"
+  }
+}

@@ -1,0 +1,79 @@
+{
+  "schema_version": "1.0.0",
+  "delta_id": "delta_1843_1844",
+  "workspace_id": "ws_example",
+  "from_generation_id": "gen_1843",
+  "to_generation_id": "gen_1844",
+  "delta_policy_version": "delta-v1",
+  "files": {
+    "changes": [
+      {
+        "entity_id": "src/controller/connection.ts",
+        "change_kind": "modified",
+        "evidence_state": "verified",
+        "before_id": "rev_old",
+        "after_id": "rev_new",
+        "reason_codes": [
+          "content_hash_changed"
+        ]
+      }
+    ],
+    "omitted_count": 0
+  },
+  "symbols": {
+    "changes": [
+      {
+        "entity_id": "symbol:ConnectionController.scheduleReconnect",
+        "change_kind": "modified",
+        "evidence_state": "verified",
+        "before_id": "fact_old",
+        "after_id": "fact_new",
+        "reason_codes": [
+          "relationship_set_changed"
+        ]
+      }
+    ],
+    "omitted_count": 0
+  },
+  "relationships": {
+    "changes": [
+      {
+        "entity_id": "relationship:scheduleReconnect->RetryPolicy.nextDelay",
+        "change_kind": "added",
+        "evidence_state": "verified",
+        "before_id": null,
+        "after_id": "rel_new",
+        "reason_codes": [
+          "resolved_edge_added"
+        ]
+      }
+    ],
+    "omitted_count": 0
+  },
+  "effects": {
+    "changes": [],
+    "omitted_count": 0
+  },
+  "coverage": {
+    "changes": [],
+    "omitted_count": 0
+  },
+  "conflicts": {
+    "changes": [],
+    "omitted_count": 0
+  },
+  "unchanged_verified_contracts": [
+    {
+      "entity_id": "symbol:ConnectionController.connect",
+      "claim_scope": "source revision and resolved relationship set",
+      "evidence": [
+        "content hash unchanged",
+        "provider fingerprint unchanged"
+      ]
+    }
+  ],
+  "uncertainty": [
+    "plugin adapter behavior remains unresolved"
+  ],
+  "delta_hash": "2222222222222222222222222222222222222222222222222222222222222222"
+}

@@ -1,0 +1,95 @@
+[package]
+name = "workspace_atlas"
+version = "2.0.0"
+edition = "2021"
+rust-version = "1.94"
+description = "Local-first, provider-neutral workspace intelligence with semantic evidence"
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/Zerolitter/Workspace-Atlas"
+include = [
+    "Cargo.toml",
+    "Cargo.lock",
+    "README.md",
+    "CONTRIBUTING.md",
+    "LICENSE",
+    "LICENSE-APACHE",
+    "LICENSE-MIT",
+    "OPERATIONS.md",
+    "SECURITY.md",
+    "docs/**",
+    "rust-toolchain.toml",
+    "src/**",
+    "bin/atlas.rs",
+    "bin/atlas-bench.rs",
+    "bin/atlas-mcp.rs",
+    "config/**",
+    "migrations/**",
+    "schemas/**",
+    "tests/**",
+    "!tests/fixtures/capacity/**",
+    "!specs/roadmap-v15-v20/Data-for-analysis.7z",
+]
+
+[lib]
+name = "workspace_atlas"
+path = "src/lib.rs"
+
+[[bin]]
+name = "atlas"
+path = "bin/atlas.rs"
+
+[[bin]]
+name = "atlas-bench"
+path = "bin/atlas-bench.rs"
+
+[[bin]]
+name = "atlas-mcp"
+path = "bin/atlas-mcp.rs"
+
+
+[dependencies]
+regex = "1"
+rusqlite = { version = "0.32", features = ["bundled", "functions"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+blake3 = "1.5"
+sha2 = "0.10"
+hex = "0.4"
+thiserror = "1"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+clap = { version = "4", features = ["derive"] }
+chrono = { version = "0.4", features = ["serde"] }
+parking_lot = "0.12"
+tempfile = "3"
+rmcp = { version = "=3.2.0", default-features = false, features = ["server", "transport-io", "schemars"] }
+tokio = { version = "1", features = ["io-std", "macros", "rt"] }
+
+[target.'cfg(windows)'.dependencies]
+# Job Objects give a real process-tree kill on timeout/cancellation
+# (RUN-008); std::process::Child::kill only terminates the direct child.
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_Security",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
+] }
+
+[target.'cfg(unix)'.dependencies]
+# Send signals to the whole child process group (created via
+# CommandExt::process_group) rather than only the direct child.
+libc = "0.2"
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true

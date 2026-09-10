@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.0.0",
+  "event_id": "event_001",
+  "task_session_id": "task_example_001",
+  "context_id": "ctx_example_001",
+  "item_id": "item_primary",
+  "entity_id": "symbol:ConnectionController.scheduleReconnect",
+  "event_type": "exact_source_requested",
+  "observation_source": "atlas_observed",
+  "occurred_at": "2026-08-29T18:03:00Z",
+  "bytes": 640,
+  "details": {
+    "verification_status": "verified"
+  }
+}

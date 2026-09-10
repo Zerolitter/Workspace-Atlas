@@ -1,0 +1,158 @@
+name: Quality matrix
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  CARGO_BUILD_JOBS: "1"
+  RUST_BACKTRACE: "1"
+
+jobs:
+  rust-quality:
+    name: Rust ${{ matrix.rust }} / ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+        rust: ["1.94", stable]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    steps:
+      - name: Check out the revision
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Install Node 24.14.1
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24.14.1
+      - name: Provision verified TypeScript provider
+        shell: bash
+        run: |
+          set -euo pipefail
+          provider_root="$RUNNER_TEMP/atlas-typescript-provider"
+          python scripts/mcp-client-smoke.py --provision-typescript "$provider_root"
+          echo "$provider_root/prefix/node_modules/.bin" >> "$GITHUB_PATH"
+      - name: Verify TypeScript provider
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(scip-typescript --version)" = "0.4.0"
+      - name: Install exact Rust channel and components
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install '${{ matrix.rust }}' --profile minimal --component rustfmt --component clippy
+          rustup override set '${{ matrix.rust }}'
+          rustc --version --verbose
+          cargo --version --verbose
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Strict Clippy
+        run: cargo clippy --all-targets --all-features --locked -- -D warnings
+      - name: Focused frozen contracts
+        run: >-
+          cargo test --locked
+          --test config_privacy
+          --test config_continuity
+          --test mcp_conformance
+          --test mcp_compiler_parity
+          --test context_route_decision
+          --test compiler_lifecycle
+          --test compiler_composition
+          --test context_observation
+          --test source_telemetry_surfaces
+          --test temporal_intelligence_v14
+          --test serving_readiness
+          --test retention_unregister
+          --test benchmark_manifest
+      - name: Full locked suite
+        run: cargo test --locked
+      - name: Public hygiene unit tests
+        run: python -m unittest scripts/test_check_public_hygiene.py
+      - name: Public and package hygiene
+        run: python scripts/check-public-hygiene.py
+
+  lifecycle-package-benchmark:
+    name: Lifecycle package benchmark / ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    steps:
+      - name: Check out the revision
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Install Node 24.14.1
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24.14.1
+      - name: Install exact Rust provider toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.94.1 --profile minimal --component rust-analyzer
+          rustup override set 1.94.1
+      - name: Build smoke binaries
+        run: cargo build --locked --bins
+      - name: Validate portable smoke contracts
+        run: |
+          python scripts/provider-smoke.py --self-test
+          python scripts/mcp-client-smoke.py --self-test
+      - name: Exercise old catalogue and installed providers
+        shell: bash
+        run: >-
+          python scripts/provider-smoke.py
+          --atlas target/debug/atlas${{ runner.os == 'Windows' && '.exe' || '' }}
+          --provider all
+      - name: Run bounded representative benchmark smoke
+        run: cargo run --release --locked --bin atlas-bench
+      - name: Package path list
+        run: cargo package --list --locked
+      - name: Package, unpack, and compile verification
+        run: cargo package --locked
+
+  real-mcp-clients:
+    name: Real MCP clients / ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - name: Check out the revision
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Install Node 24.14.1
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24.14.1
+      - name: Install stable Rust
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install stable --profile minimal
+          rustup override set stable
+      - name: Build Atlas MCP binaries
+        run: cargo build --locked --bin atlas --bin atlas-mcp
+      - name: Run real Inspector and Codex clients
+        shell: bash
+        run: >-
+          python scripts/mcp-client-smoke.py
+          --client all
+          --atlas target/debug/atlas${{ runner.os == 'Windows' && '.exe' || '' }}
+          --atlas-mcp target/debug/atlas-mcp${{ runner.os == 'Windows' && '.exe' || '' }}

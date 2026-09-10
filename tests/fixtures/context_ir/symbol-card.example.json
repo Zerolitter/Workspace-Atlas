@@ -1,0 +1,40 @@
+{
+  "schema_version": "1.0.0",
+  "serving_generation_id": "serve_gen_1843",
+  "workspace_id": "ws_example",
+  "generation_id": "gen_1843",
+  "canonical_symbol_key": "symbol:ConnectionController.scheduleReconnect",
+  "path": "src/controller/connection.ts",
+  "range": {
+    "start_byte": 1800,
+    "end_byte": 2440,
+    "start_line": 51,
+    "end_line": 73
+  },
+  "kind": "method",
+  "language": "typescript",
+  "signature": "scheduleReconnect(policy: RetryPolicy): void",
+  "preferred_evidence": {
+    "fact_id": "fact_001",
+    "provider_tier": "semantic_index",
+    "confidence": 1.0,
+    "state": "resolved"
+  },
+  "counts": {
+    "callers": 2,
+    "callees": 3,
+    "references": 5,
+    "tests": 2,
+    "configs": 1,
+    "effects": 2,
+    "conflicts": 0,
+    "unresolved": 1
+  },
+  "coverage_state": "partial",
+  "cost": {
+    "source_bytes": 640,
+    "estimated_tokens": 250,
+    "metadata_bytes": 380
+  },
+  "card_hash": "2222222222222222222222222222222222222222222222222222222222222222"
+}

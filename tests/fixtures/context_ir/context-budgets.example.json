@@ -1,0 +1,50 @@
+{
+  "budget": {
+    "max_records": 4,
+    "max_source_bytes": 1000,
+    "max_estimated_tokens": 300,
+    "max_depth": 2,
+    "max_work_units": 20,
+    "uncertainty_reserve_percent": 25
+  },
+  "candidates": [
+    { "candidate_id": "candidate-00", "rank": 0, "source_bytes": 100, "estimated_tokens": 50, "relationship_depth": 0, "work_units": 1, "uncertainty": false },
+    { "candidate_id": "candidate-01", "rank": 1, "source_bytes": 0, "estimated_tokens": 20, "relationship_depth": 1, "work_units": 1, "uncertainty": true },
+    { "candidate_id": "candidate-02", "rank": 2, "source_bytes": 600, "estimated_tokens": 100, "relationship_depth": 1, "work_units": 1, "uncertainty": false },
+    { "candidate_id": "candidate-03", "rank": 3, "source_bytes": 500, "estimated_tokens": 50, "relationship_depth": 1, "work_units": 1, "uncertainty": false },
+    { "candidate_id": "candidate-04", "rank": 4, "source_bytes": 0, "estimated_tokens": 200, "relationship_depth": 1, "work_units": 1, "uncertainty": false },
+    { "candidate_id": "candidate-05", "rank": 5, "source_bytes": 0, "estimated_tokens": 10, "relationship_depth": 3, "work_units": 1, "uncertainty": false },
+    { "candidate_id": "candidate-06", "rank": 6, "source_bytes": 0, "estimated_tokens": 10, "relationship_depth": 1, "work_units": 21, "uncertainty": false },
+    { "candidate_id": "candidate-07", "rank": 7, "source_bytes": 0, "estimated_tokens": 10, "relationship_depth": 1, "work_units": 1, "uncertainty": true },
+    { "candidate_id": "candidate-08", "rank": 8, "source_bytes": 0, "estimated_tokens": 10, "relationship_depth": 1, "work_units": 1, "uncertainty": false },
+    { "candidate_id": "candidate-09", "rank": 9, "source_bytes": 0, "estimated_tokens": 10, "relationship_depth": 1, "work_units": 1, "uncertainty": false }
+  ],
+  "expected": {
+    "selected_candidate_ids": ["candidate-00", "candidate-01", "candidate-02", "candidate-08"],
+    "selected_records": 4,
+    "selected_source_bytes": 700,
+    "selected_estimated_tokens": 180,
+    "relationship_depth_reached": 1,
+    "work_units_consumed": 9,
+    "uncertainty_records_reserved": 1,
+    "uncertainty_records_selected": 1,
+    "omissions": {
+      "candidates_considered": 10,
+      "selected": 4,
+      "omitted": 6,
+      "truncated": true,
+      "by_reason": {
+        "estimated_token_budget": 1,
+        "record_budget": 1,
+        "relationship_depth_budget": 1,
+        "source_byte_budget": 1,
+        "uncertainty_reserve": 1,
+        "work_unit_budget": 1
+      }
+    }
+  },
+  "transient_execution_variants": [
+    { "attempt_id": "attempt-a", "elapsed_ms": 1, "retry_count": 0, "cancelled": false, "cache_hit": false },
+    { "attempt_id": "attempt-b", "elapsed_ms": 9999, "retry_count": 7, "cancelled": true, "cache_hit": true }
+  ]
+}

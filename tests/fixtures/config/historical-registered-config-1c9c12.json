@@ -1,0 +1,142 @@
+{
+  "schema_version": "1.1.0",
+  "workspace": {
+    "display_name": "WS-Atlas-selfhost0r-validation",
+    "workspace_id": null,
+    "canonical_root_label": null
+  },
+  "database": {
+    "path": null,
+    "busy_timeout_ms": 5000,
+    "journal_mode": "WAL",
+    "synchronous": "NORMAL"
+  },
+  "policy": {
+    "symlink_policy": "reject",
+    "max_file_size_bytes": 4194304,
+    "default_encoding": "utf-8",
+    "newlines": ["lf", "crlf", "cr"],
+    "exclude": {
+      "patterns": [".env", "*.pem", "*.key"],
+      "vendor_paths": ["node_modules", "vendor"],
+      "build_paths": ["target", "dist", "build"],
+      "generated_paths": ["generated"],
+      "binary_paths": [],
+      "archive_paths": [".workspace-history"]
+    }
+  },
+  "reconcile": {
+    "debounce_ms": 250,
+    "interval_seconds": 300,
+    "hash_suspect_on_metadata_change": true
+  },
+  "provider_runtime": {
+    "allow_shell": false,
+    "inherit_environment": false,
+    "allowed_environment": ["PATH", "PATHEXT", "SYSTEMROOT", "TEMP", "TMP", "HOME", "USERPROFILE"],
+    "default_timeout_ms": 120000,
+    "graceful_cancel_ms": 1500,
+    "max_stdout_bytes": 1048576,
+    "max_stderr_bytes": 1048576,
+    "max_output_bytes": 536870912,
+    "temporary_root_policy": "application_private",
+    "network_isolation_policy": "best_effort_allowed",
+    "retain_raw_output": false
+  },
+  "providers": [
+    {
+      "name": "file_metadata",
+      "kind": "builtin",
+      "tier": "document_config",
+      "scope": "file",
+      "enabled": true,
+      "required": true,
+      "priority": 950,
+      "languages": [],
+      "project_markers": [],
+      "version": null,
+      "command": null,
+      "arguments": [],
+      "output_format": null,
+      "probe_arguments": [],
+      "timeout_ms": null,
+      "max_output_bytes": null,
+      "configuration": {}
+    },
+    {
+      "name": "structural_typescript",
+      "kind": "builtin",
+      "tier": "structural",
+      "scope": "file",
+      "enabled": true,
+      "required": false,
+      "priority": 500,
+      "languages": ["typescript", "javascript"],
+      "project_markers": [],
+      "version": null,
+      "command": null,
+      "arguments": [],
+      "output_format": null,
+      "probe_arguments": [],
+      "timeout_ms": null,
+      "max_output_bytes": null,
+      "configuration": {}
+    },
+    {
+      "name": "scip-typescript",
+      "kind": "external_scip",
+      "tier": "semantic_index",
+      "scope": "project",
+      "enabled": true,
+      "required": false,
+      "priority": 800,
+      "languages": ["typescript", "javascript"],
+      "project_markers": ["tsconfig.json", "jsconfig.json", "package.json"],
+      "version": null,
+      "command": "scip-typescript",
+      "arguments": ["index", "--output", "{output_file}"],
+      "output_format": "scip",
+      "probe_arguments": ["index", "--help"],
+      "timeout_ms": 120000,
+      "max_output_bytes": 536870912,
+      "configuration": {
+        "infer_tsconfig_for_javascript": true,
+        "max_file_byte_size": 4194304,
+        "no_global_caches": false
+      }
+    },
+    {
+      "name": "rust-analyzer",
+      "kind": "external_scip",
+      "tier": "semantic_index",
+      "scope": "project",
+      "enabled": true,
+      "required": false,
+      "priority": 800,
+      "languages": ["rust"],
+      "project_markers": ["Cargo.toml"],
+      "version": "1.94.1",
+      "command": "rust-analyzer",
+      "arguments": ["scip", ".", "--output", "{output_file}"],
+      "output_format": "scip",
+      "probe_arguments": ["--version"],
+      "timeout_ms": 120000,
+      "max_output_bytes": 536870912,
+      "configuration": {}
+    }
+  ],
+  "evidence": {
+    "projection_policy_version": "preferred-evidence-1.0.0",
+    "resolution_policy_version": "semantic-resolution-1.0.0",
+    "default_priority": {
+      "compiler": 900,
+      "runtime_observation": 850,
+      "semantic_index": 800,
+      "language_server": 700,
+      "structural": 500,
+      "document_config": 300,
+      "textual": 100,
+      "heuristic": 50
+    }
+  }
+}

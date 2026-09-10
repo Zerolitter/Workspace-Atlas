@@ -1,0 +1,25 @@
+{
+  "schema_version": "1.0.0",
+  "provider_name": "scip-typescript",
+  "status": "available",
+  "observed_version": "0.4.0",
+  "executable_path": "C:/<tools>/scip-typescript.cmd",
+  "executable_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "supported_output_formats": [
+    "scip"
+  ],
+  "supported_arguments": [
+    "index",
+    "--output",
+    "--infer-tsconfig"
+  ],
+  "network_isolation_state": "not_available",
+  "observed_at": "2026-08-29T08:00:00Z",
+  "diagnostics": [
+    {
+      "severity": "warning",
+      "code": "network_isolation_not_enforced",
+      "message": "No platform network sandbox is configured; credentials remain withheld."
+    }
+  ]
+}

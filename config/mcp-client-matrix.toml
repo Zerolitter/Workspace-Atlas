@@ -1,0 +1,118 @@
+schema_version = "1.0.0"
+modern_protocol = "2026-07-28"
+legacy_protocol = "2025-11-25"
+required_tool_count = 19
+representative_tool = "atlas_status"
+
+[limits]
+process_timeout_seconds = 120
+stdout_bytes = 1048576
+stderr_bytes = 1048576
+json_bytes = 1048576
+
+[clients.inspector]
+package = "@modelcontextprotocol/inspector"
+version = "2.5.0"
+mode = "cli-stdio"
+protocol_mode = "legacy"
+node_minimum = "22.19.0"
+npm_integrity = "sha512-E7YQiWyuXLVPPbDRO5HpyCXcYnwG8EPHNbqNPn5u+AxDzfNi+6Idw2vRYW9CQplJpkxGkNtquTFXGZ0ZncksIg=="
+install_scripts = false
+tarball = "https://registry.npmjs.org/@modelcontextprotocol/inspector/-/inspector-2.5.0.tgz"
+source = "https://github.com/modelcontextprotocol/inspector/blob/main/clients/cli/README.md"
+registry = "https://registry.npmjs.org/@modelcontextprotocol/inspector/2.5.0"
+
+[clients.codex]
+package = "@openai/codex"
+version = "0.151.0"
+mode = "exec-stdio-fake-responses"
+protocol_mode = "client-negotiated"
+npm_integrity = "sha512-mhtWmOZRdmWD1jPbLDnQb59BsaVP/V+lXe/OFNR9ZcLZU0UCiBwn98Fcav1ss7sDIlHkuqj6nWd44IPeXoOhJA=="
+credential_mode = "isolated-empty-home"
+requires_openai_auth = false
+wire_api = "responses"
+source = "https://developers.openai.com/codex/mcp/"
+config_source = "https://developers.openai.com/codex/config-reference/"
+registry = "https://registry.npmjs.org/@openai/codex/0.151.0"
+tarball = "https://registry.npmjs.org/@openai/codex/-/codex-0.151.0.tgz"
+
+[clients.codex.platforms.win32-x64]
+os = "win32"
+arch = "x64"
+dependency = "@openai/codex-win32-x64"
+package = "@openai/codex"
+version = "0.151.0-win32-x64"
+npm_integrity = "sha512-sLT7xvID3jhU6tkzcwRPnMEclKRwUPbpo0mtfxIF9KpdZH3VJV7sM2/kXWXyvUM7Zt/YeyOaeATTEysbRz8Yog=="
+registry = "https://registry.npmjs.org/@openai/codex/0.151.0-win32-x64"
+tarball = "https://registry.npmjs.org/@openai/codex/-/codex-0.151.0-win32-x64.tgz"
+
+[clients.codex.platforms.win32-arm64]
+os = "win32"
+arch = "arm64"
+dependency = "@openai/codex-win32-arm64"
+package = "@openai/codex"
+version = "0.151.0-win32-arm64"
+npm_integrity = "sha512-zDWzOoh9wHm+Om1Nhn7os47rAVeSGPh0SnM3YOttdq6iPJz2zn4vBnbGUZjeih1qW/3mvNF3Oyd4owlaHmphmg=="
+registry = "https://registry.npmjs.org/@openai/codex/0.151.0-win32-arm64"
+tarball = "https://registry.npmjs.org/@openai/codex/-/codex-0.151.0-win32-arm64.tgz"
+
+[clients.codex.platforms.linux-x64]
+os = "linux"
+arch = "x64"
+dependency = "@openai/codex-linux-x64"
+package = "@openai/codex"
+version = "0.151.0-linux-x64"
+npm_integrity = "sha512-xcVyY1FtwvVYhh2JBmz8fX8CQqFAxO/lxJ2IXsh8x5uwxZVHVl5fZHFHf8JdRaOGG0vpkYmu/DKKVoLd56/DDQ=="
+registry = "https://registry.npmjs.org/@openai/codex/0.151.0-linux-x64"
+tarball = "https://registry.npmjs.org/@openai/codex/-/codex-0.151.0-linux-x64.tgz"
+
+[clients.codex.platforms.linux-arm64]
+os = "linux"
+arch = "arm64"
+dependency = "@openai/codex-linux-arm64"
+package = "@openai/codex"
+version = "0.151.0-linux-arm64"
+npm_integrity = "sha512-CsLgFeX4TQ6I2Gdrxd2r5UbgIbDLCdtcLAlnMYjr06bCL057MTNGec7Ewb3+Z2DBiMuXCljdTBGqLOePkMV0sQ=="
+registry = "https://registry.npmjs.org/@openai/codex/0.151.0-linux-arm64"
+tarball = "https://registry.npmjs.org/@openai/codex/-/codex-0.151.0-linux-arm64.tgz"
+
+[clients.codex.platforms.darwin-x64]
+os = "darwin"
+arch = "x64"
+dependency = "@openai/codex-darwin-x64"
+package = "@openai/codex"
+version = "0.151.0-darwin-x64"
+npm_integrity = "sha512-0y+g8TVpP+Fn10mjoKYXER6qYjn29w7xBUsbPXJ6Accu/FoM4Qp4WbKXQPmE0G0yUACTQVZRjzTSsdWUezNgkg=="
+registry = "https://registry.npmjs.org/@openai/codex/0.151.0-darwin-x64"
+tarball = "https://registry.npmjs.org/@openai/codex/-/codex-0.151.0-darwin-x64.tgz"
+
+[clients.codex.platforms.darwin-arm64]
+os = "darwin"
+arch = "arm64"
+dependency = "@openai/codex-darwin-arm64"
+package = "@openai/codex"
+version = "0.151.0-darwin-arm64"
+npm_integrity = "sha512-g7YzpaCZGCw19R/gly3vRPjnLqaW7JcBAu2WQQ6e8PIlvBPmS/gMplIUURMgNO6gi8LsPzdlQtLqkwoeOOlIdg=="
+registry = "https://registry.npmjs.org/@openai/codex/0.151.0-darwin-arm64"
+tarball = "https://registry.npmjs.org/@openai/codex/-/codex-0.151.0-darwin-arm64.tgz"
+
+[providers.typescript]
+package = "@sourcegraph/scip-typescript"
+version = "0.4.0"
+npm_integrity = "sha512-k+AtsrqmS41Sd5qjkZlHcmvoSQIvBOonRj4jpgp0KNFM6aqvMGpdSuPUqrUcg8ENTKjUbfaUVszgQwq3bCOvwA=="
+registry = "https://registry.npmjs.org/@sourcegraph/scip-typescript/0.4.0"
+tarball = "https://registry.npmjs.org/@sourcegraph/scip-typescript/-/scip-typescript-0.4.0.tgz"
+source = "https://github.com/sourcegraph/scip-typescript"
+
+[manual.claude_desktop]
+mode = "manual-only"
+reason = "No officially documented deterministic headless client path was accepted."
+
+[manual.claude_code]
+mode = "manual-only"
+reason = "No officially documented deterministic credential-free headless path was accepted."
+
+[fixture]
+path = "tests/fixtures/catalogues/v1.4.sqlite"
+sha256 = "55aca70c025c42af7942bf3d99237aa586b1dba6b75273f34011fbe3c2a6d660"
+provenance = "Scrubbed schema-v3 pre-0004 catalogue derived from the accepted RP7 migration rehearsal; all absolute roots and workspace identities replaced, timestamps fixed, journal removed, and VACUUM applied with Python sqlite3 3.50.4."

@@ -1,0 +1,910 @@
+{
+  "schema_version": "2.0.0",
+  "kind": "capacity-accepted-outcome-contract",
+  "supersedes": {
+    "contract": "capacity-manifest-v1-accepted-outcome",
+    "reason": "the v1 fields preserve fixture arithmetic provenance but do not describe production Truth rows",
+    "manifests": [
+      {
+        "dataset_name": "repo-small-v1",
+        "manifest_sha256": "6209c40d6345987d4373acf29ed6ca34056c718b7a0b87cead74a87952260549",
+        "evidence_counts": {
+          "conflicts": 0,
+          "coverage": 115,
+          "diagnostics": 0,
+          "effects": 1,
+          "relationships": 114,
+          "symbols": 115
+        },
+        "expected_accepted_outcome_hash": "b0b38cbf38c474ce70567445904edd43bae22b931912cd6b4db912685065b0a2",
+        "expected_ready_versus_truth_result_hash": "61c404f4729eaf14a82b07e17a349b2b3d27fbad79fc743d4a7ae408654a68be"
+      },
+      {
+        "dataset_name": "repo-medium-v1",
+        "manifest_sha256": "c4160323a9930d92190854427d24debfaa2e81c9a8e165b98b9e0fcb5e648a9e",
+        "evidence_counts": {
+          "conflicts": 0,
+          "coverage": 922,
+          "diagnostics": 0,
+          "effects": 10,
+          "relationships": 921,
+          "symbols": 922
+        },
+        "expected_accepted_outcome_hash": "2ee65019def7532ea1994c181c76e50bf3b2fbd687425c03ba7ffcb92890ac49",
+        "expected_ready_versus_truth_result_hash": "bc0b955133b728b9e040331641f0a5e1d75e449b75b932055f3e8e7f58305a1e"
+      },
+      {
+        "dataset_name": "repo-large-v1",
+        "manifest_sha256": "81f8b8672d6a0e0aa237f1fbe1d73bcb86c89f3b24ed33eb463389c0c2e7d33b",
+        "evidence_counts": {
+          "conflicts": 0,
+          "coverage": 7373,
+          "diagnostics": 0,
+          "effects": 81,
+          "relationships": 7372,
+          "symbols": 7373
+        },
+        "expected_accepted_outcome_hash": "6afe58d80924db07cf99b656384a0992fa0329a1200ecef21985eb3839ff0699",
+        "expected_ready_versus_truth_result_hash": "fefb68dfddb7743dba0d7fb1294a0eec45c01e801502c4005c71b3a8b53bebb0"
+      }
+    ]
+  },
+  "truth_projection": {
+    "generation": "active committed generation selected from the registered workspace after production reconcile",
+    "target_identity": "exactly one current_symbol association for the immutable manifest path/symbol plus the live source SHA-256",
+    "rows": {
+      "symbols": "distinct symbol_fact_id values joined through extractor_run and generation_file to the active generation",
+      "relationships": "distinct relationship_fact_id values joined through extractor_run and generation_file to the active generation",
+      "effects": "distinct effect_fact_id values joined through extractor_run and generation_file to the active generation",
+      "diagnostics": "all diagnostic rows whose generation_id is the active generation",
+      "coverage": "all coverage_record rows whose generation_id is the active generation",
+      "conflicts": "all evidence_conflict rows whose generation_id is the active generation"
+    },
+    "canonical_hash": [
+      "dataset_name",
+      "evidence_counts",
+      "target_identity"
+    ]
+  },
+  "preflight_profile": "small",
+  "outcomes": [
+    {
+      "configuration_hash": "adc81f5356f609b8ca2f0e4aa5170ca0d821a091b8fdd22fe3ec00caafe61f14",
+      "dataset_name": "repo-small-v1",
+      "evidence_counts": {
+        "conflicts": 0,
+        "coverage": 0,
+        "diagnostics": 0,
+        "effects": 0,
+        "relationships": 113,
+        "symbols": 238
+      },
+      "expected_accepted_outcome_hash": "d85a33f8a6bd103eeec377bbb929ca792f9ac452af43d962d60a1bbd19033f36",
+      "expected_observation_state": "success",
+      "expected_ready_versus_truth_result_hash": "ba1b2f1a655397db5a5aca4f5ee08740122c8d5f5dc83fd775ee26d3a7473cd3",
+      "manifest_sha256": "6209c40d6345987d4373acf29ed6ca34056c718b7a0b87cead74a87952260549",
+      "provider_condition": "builtin-only",
+      "provider_members": [
+        "file_metadata@1.0.0",
+        "document_config@1.0.0",
+        "structural_typescript@1.0.0",
+        "safe_text_fallback@1.0.0"
+      ],
+      "target_identity": {
+        "relative_path": "src/controller/large_controller.ts",
+        "sha256": "c242def3c4223ab3a94b9c14291c8580950854b6fe0147513d9ea18952eb2b12",
+        "symbol": "scheduleReconnect"
+      },
+      "truth_state": "baseline",
+      "phases": [
+        "cold-initialization-reconcile",
+        "no-change-reconcile",
+        "ready-serving-query-compiler",
+        "truth-fallback-query-compiler",
+        "light-route-compiler",
+        "progressive-deep-route-compiler",
+        "catalogue-growth"
+      ],
+      "expected_eligible_files": 128,
+      "expected_indexed_files": 128,
+      "expected_source_bytes": 180935,
+      "preflight_phase": "no-change-reconcile"
+    },
+    {
+      "configuration_hash": "adc81f5356f609b8ca2f0e4aa5170ca0d821a091b8fdd22fe3ec00caafe61f14",
+      "dataset_name": "repo-small-v1",
+      "evidence_counts": {
+        "conflicts": 0,
+        "coverage": 0,
+        "diagnostics": 0,
+        "effects": 0,
+        "relationships": 113,
+        "symbols": 237
+      },
+      "expected_accepted_outcome_hash": "a34f87916b36ee5bd1a433745126a076a72537132ae9ef8e8ca856ca1bf72fef",
+      "expected_observation_state": "success",
+      "expected_ready_versus_truth_result_hash": "84591d0002db072b251012a10b23edc9afbc6ec1d4d94852dd7e404f81b9ad5b",
+      "manifest_sha256": "6209c40d6345987d4373acf29ed6ca34056c718b7a0b87cead74a87952260549",
+      "provider_condition": "builtin-only",
+      "provider_members": [
+        "file_metadata@1.0.0",
+        "document_config@1.0.0",
+        "structural_typescript@1.0.0",
+        "safe_text_fallback@1.0.0"
+      ],
+      "target_identity": {
+        "relative_path": "src/controller/large_controller.ts",
+        "sha256": "c242def3c4223ab3a94b9c14291c8580950854b6fe0147513d9ea18952eb2b12",
+        "symbol": "scheduleReconnect"
+      },
+      "truth_state": "fixed_incremental",
+      "phases": [
+        "fixed-incremental-reconcile"
+      ],
+      "expected_eligible_files": 127,
+      "expected_indexed_files": 127,
+      "expected_source_bytes": 180823,
+      "preflight_phase": "fixed-incremental-reconcile"
+    },
+    {
+      "configuration_hash": "91f400835a5ae3dee3850e551934851d12ea4b417d7d1b72dd87272fcc8ca6d8",
+      "dataset_name": "repo-small-v1",
+      "evidence_counts": {
+        "conflicts": 117,
+        "coverage": 1,
+        "diagnostics": 0,
+        "effects": 0,
+        "relationships": 1217,
+        "symbols": 681
+      },
+      "expected_accepted_outcome_hash": "ccfeee92cc9bc0c33160011a8f2ff64c0faa3aa53abec5c3eccdecc08ec370a6",
+      "expected_observation_state": "success",
+      "expected_ready_versus_truth_result_hash": "12a18f44c7908ef92341f49c8c07e77e51d846b55c1e6cf49205149146943c58",
+      "manifest_sha256": "6209c40d6345987d4373acf29ed6ca34056c718b7a0b87cead74a87952260549",
+      "provider_condition": "typescript-only",
+      "provider_members": [
+        "scip-typescript@0.4.0"
+      ],
+      "target_identity": {
+        "relative_path": "src/controller/large_controller.ts",
+        "sha256": "c242def3c4223ab3a94b9c14291c8580950854b6fe0147513d9ea18952eb2b12",
+        "symbol": "scheduleReconnect"
+      },
+      "truth_state": "baseline",
+      "phases": [
+        "cold-initialization-reconcile",
+        "no-change-reconcile",
+        "ready-serving-query-compiler",
+        "truth-fallback-query-compiler",
+        "light-route-compiler",
+        "progressive-deep-route-compiler",
+        "catalogue-growth"
+      ],
+      "expected_eligible_files": 128,
+      "expected_indexed_files": 128,
+      "expected_source_bytes": 180935,
+      "preflight_phase": "no-change-reconcile"
+    },
+    {
+      "configuration_hash": "91f400835a5ae3dee3850e551934851d12ea4b417d7d1b72dd87272fcc8ca6d8",
+      "dataset_name": "repo-small-v1",
+      "evidence_counts": {
+        "conflicts": 116,
+        "coverage": 1,
+        "diagnostics": 0,
+        "effects": 0,
+        "relationships": 1225,
+        "symbols": 681
+      },
+      "expected_accepted_outcome_hash": "a15281ba0642722831f83a3b21b04e996ff0510790248d84f0bd623945886542",
+      "expected_observation_state": "success",
+      "expected_ready_versus_truth_result_hash": "b96a9824d1e6335dd579c3f1ba4ee91c1509a726abf8ce460803dc39b2976d29",
+      "manifest_sha256": "6209c40d6345987d4373acf29ed6ca34056c718b7a0b87cead74a87952260549",
+      "provider_condition": "typescript-only",
+      "provider_members": [
+        "scip-typescript@0.4.0"
+      ],
+      "target_identity": {
+        "relative_path": "src/controller/large_controller.ts",
+        "sha256": "c242def3c4223ab3a94b9c14291c8580950854b6fe0147513d9ea18952eb2b12",
+        "symbol": "scheduleReconnect"
+      },
+      "truth_state": "fixed_incremental",
+      "phases": [
+        "fixed-incremental-reconcile"
+      ],
+      "expected_eligible_files": 127,
+      "expected_indexed_files": 127,
+      "expected_source_bytes": 180823,
+      "preflight_phase": "fixed-incremental-reconcile"
+    },
+    {
+      "configuration_hash": "4d80559875bb2587280d7a4d1b0bcb43886db718e85872c25f5b287543e47d77",
+      "dataset_name": "repo-small-v1",
+      "evidence_counts": {
+        "conflicts": 117,
+        "coverage": 1,
+        "diagnostics": 0,
+        "effects": 0,
+        "relationships": 1217,
+        "symbols": 681
+      },
+      "expected_accepted_outcome_hash": "ccfeee92cc9bc0c33160011a8f2ff64c0faa3aa53abec5c3eccdecc08ec370a6",
+      "expected_observation_state": "success",
+      "expected_ready_versus_truth_result_hash": "12a18f44c7908ef92341f49c8c07e77e51d846b55c1e6cf49205149146943c58",
+      "manifest_sha256": "6209c40d6345987d4373acf29ed6ca34056c718b7a0b87cead74a87952260549",
+      "provider_condition": "combined",
+      "provider_members": [
+        "file_metadata@1.0.0",
+        "document_config@1.0.0",
+        "structural_typescript@1.0.0",
+        "safe_text_fallback@1.0.0",
+        "scip-typescript@0.4.0"
+      ],
+      "target_identity": {
+        "relative_path": "src/controller/large_controller.ts",
+        "sha256": "c242def3c4223ab3a94b9c14291c8580950854b6fe0147513d9ea18952eb2b12",
+        "symbol": "scheduleReconnect"
+      },
+      "truth_state": "baseline",
+      "phases": [
+        "cold-initialization-reconcile",
+        "no-change-reconcile",
+        "ready-serving-query-compiler",
+        "truth-fallback-query-compiler",
+        "light-route-compiler",
+        "progressive-deep-route-compiler",
+        "catalogue-growth"
+      ],
+      "expected_eligible_files": 128,
+      "expected_indexed_files": 128,
+      "expected_source_bytes": 180935,
+      "preflight_phase": "no-change-reconcile"
+    },
+    {
+      "configuration_hash": "4d80559875bb2587280d7a4d1b0bcb43886db718e85872c25f5b287543e47d77",
+      "dataset_name": "repo-small-v1",
+      "evidence_counts": {
+        "conflicts": 116,
+        "coverage": 1,
+        "diagnostics": 0,
+        "effects": 0,
+        "relationships": 1225,
+        "symbols": 681
+      },
+      "expected_accepted_outcome_hash": "a15281ba0642722831f83a3b21b04e996ff0510790248d84f0bd623945886542",
+      "expected_observation_state": "success",
+      "expected_ready_versus_truth_result_hash": "b96a9824d1e6335dd579c3f1ba4ee91c1509a726abf8ce460803dc39b2976d29",
+      "manifest_sha256": "6209c40d6345987d4373acf29ed6ca34056c718b7a0b87cead74a87952260549",
+      "provider_condition": "combined",
+      "provider_members": [
+        "file_metadata@1.0.0",
+        "document_config@1.0.0",
+        "structural_typescript@1.0.0",
+        "safe_text_fallback@1.0.0",
+        "scip-typescript@0.4.0"
+      ],
+      "target_identity": {
+        "relative_path": "src/controller/large_controller.ts",
+        "sha256": "c242def3c4223ab3a94b9c14291c8580950854b6fe0147513d9ea18952eb2b12",
+        "symbol": "scheduleReconnect"
+      },
+      "truth_state": "fixed_incremental",
+      "phases": [
+        "fixed-incremental-reconcile"
+      ],
+      "expected_eligible_files": 127,
+      "expected_indexed_files": 127,
+      "expected_source_bytes": 180823,
+      "preflight_phase": "fixed-incremental-reconcile"
+    },
+    {
+      "configuration_hash": "adc81f5356f609b8ca2f0e4aa5170ca0d821a091b8fdd22fe3ec00caafe61f14",
+      "dataset_name": "repo-medium-v1",
+      "evidence_counts": {
+        "conflicts": 0,
+        "coverage": 0,
+        "diagnostics": 0,
+        "effects": 0,
+        "relationships": 0,
+        "symbols": 874
+      },
+      "expected_accepted_outcome_hash": "110d3f97e1ca9905c0a2c0af65e0f8437f40a31b6cb0ec34c55970370a91acd1",
+      "expected_observation_state": "success",
+      "expected_ready_versus_truth_result_hash": "1ccde9f84be57f21bc54891ed08498f44ef384e7dad21a6b1fad1b14f86c3f76",
+      "manifest_sha256": "c4160323a9930d92190854427d24debfaa2e81c9a8e165b98b9e0fcb5e648a9e",
+      "provider_condition": "builtin-only",
+      "provider_members": [
+        "file_metadata@1.0.0",
+        "document_config@1.0.0",
+        "structural_typescript@1.0.0",
+        "safe_text_fallback@1.0.0"
+      ],
+      "target_identity": {
+        "relative_path": "src/ts/module_00000.ts",
+        "sha256": "a8f3fa829f0601127c4c734d8a3b055bead5b0ff672da5f547d8ba394ebf0617",
+        "symbol": "capacityValue"
+      },
+      "truth_state": "baseline",
+      "phases": [
+        "cold-initialization-reconcile",
+        "no-change-reconcile",
+        "ready-serving-query-compiler",
+        "truth-fallback-query-compiler",
+        "light-route-compiler",
+        "progressive-deep-route-compiler",
+        "catalogue-growth"
+      ],
+      "expected_eligible_files": 1024,
+      "expected_indexed_files": 1024,
+      "expected_source_bytes": 34982,
+      "preflight_phase": "no-change-reconcile"
+    },
+    {
+      "configuration_hash": "adc81f5356f609b8ca2f0e4aa5170ca0d821a091b8fdd22fe3ec00caafe61f14",
+      "dataset_name": "repo-medium-v1",
+      "evidence_counts": {
+        "conflicts": 0,
+        "coverage": 0,
+        "diagnostics": 0,
+        "effects": 0,
+        "relationships": 0,
+        "symbols": 873
+      },
+      "expected_accepted_outcome_hash": "101b2aa7f3f7ab4d8bafd68ca13a7bb531c5421e564c10802e18458903d47206",
+      "expected_observation_state": "success",
+      "expected_ready_versus_truth_result_hash": "36c72e54211fcf46cae7031248f2122c62161fb3f2c86eebe18882b00f1a63d4",
+      "manifest_sha256": "c4160323a9930d92190854427d24debfaa2e81c9a8e165b98b9e0fcb5e648a9e",
+      "provider_condition": "builtin-only",
+      "provider_members": [
+        "file_metadata@1.0.0",
+        "document_config@1.0.0",
+        "structural_typescript@1.0.0",
+        "safe_text_fallback@1.0.0"
+      ],
+      "target_identity": {
+        "relative_path": "src/ts/module_00000.ts",
+        "sha256": "a8f3fa829f0601127c4c734d8a3b055bead5b0ff672da5f547d8ba394ebf0617",
+        "symbol": "capacityValue"
+      },
+      "truth_state": "fixed_incremental",
+      "phases": [
+        "fixed-incremental-reconcile"
+      ],
+      "expected_eligible_files": 1023,
+      "expected_indexed_files": 1023,
+      "expected_source_bytes": 35358,
+      "preflight_phase": "fixed-incremental-reconcile"
+    },
+    {
+      "configuration_hash": "91f400835a5ae3dee3850e551934851d12ea4b417d7d1b72dd87272fcc8ca6d8",
+      "dataset_name": "repo-medium-v1",
+      "evidence_counts": {
+        "conflicts": 768,
+        "coverage": 1,
+        "diagnostics": 0,
+        "effects": 0,
+        "relationships": 1538,
+        "symbols": 2411
+      },
+      "expected_accepted_outcome_hash": "679f6e6d1eeca769d9b69e28ca85a59fe8130848d839dac0bf9d704df2e1f369",
+      "expected_observation_state": "success",
+      "expected_ready_versus_truth_result_hash": "e5f2013d849616e2a61580234070bbd9c5e3a120a90c0c81118eb295feee1003",
+      "manifest_sha256": "c4160323a9930d92190854427d24debfaa2e81c9a8e165b98b9e0fcb5e648a9e",
+      "provider_condition": "typescript-only",
+      "provider_members": [
+        "scip-typescript@0.4.0"
+      ],
+      "target_identity": {
+        "relative_path": "src/ts/module_00000.ts",
+        "sha256": "a8f3fa829f0601127c4c734d8a3b055bead5b0ff672da5f547d8ba394ebf0617",
+        "symbol": "capacityValue"
+      },
+      "truth_state": "baseline",
+      "phases": [
+        "cold-initialization-reconcile",
+        "no-change-reconcile",
+        "ready-serving-query-compiler",
+        "truth-fallback-query-compiler",
+        "light-route-compiler",
+        "progressive-deep-route-compiler",
+        "catalogue-growth"
+      ],
+      "expected_eligible_files": 1024,
+      "expected_indexed_files": 1024,
+      "expected_source_bytes": 34982,
+      "preflight_phase": "no-change-reconcile"
+    },
+    {
+      "configuration_hash": "91f400835a5ae3dee3850e551934851d12ea4b417d7d1b72dd87272fcc8ca6d8",
+      "dataset_name": "repo-medium-v1",
+      "evidence_counts": {
+        "conflicts": 767,
+        "coverage": 1,
+        "diagnostics": 0,
+        "effects": 0,
+        "relationships": 1536,
+        "symbols": 2408
+      },
+      "expected_accepted_outcome_hash": "3d66b31f89f2088a09c87a6f45b659c1d06dcd60a1a529f82ef832b34434d6f0",
+      "expected_observation_state": "success",
+      "expected_ready_versus_truth_result_hash": "f8ccba6869f1d6425489faddea61c30fd2ca8d3500b301d68fa8423331092539",
+      "manifest_sha256": "c4160323a9930d92190854427d24debfaa2e81c9a8e165b98b9e0fcb5e648a9e",
+      "provider_condition": "typescript-only",
+      "provider_members": [
+        "scip-typescript@0.4.0"
+      ],
+      "target_identity": {
+        "relative_path": "src/ts/module_00000.ts",
+        "sha256": "a8f3fa829f0601127c4c734d8a3b055bead5b0ff672da5f547d8ba394ebf0617",
+        "symbol": "capacityValue"
+      },
+      "truth_state": "fixed_incremental",
+      "phases": [
+        "fixed-incremental-reconcile"
+      ],
+      "expected_eligible_files": 1023,
+      "expected_indexed_files": 1023,
+      "expected_source_bytes": 35358,
+      "preflight_phase": "fixed-incremental-reconcile"
+    },
+    {
+      "configuration_hash": "4039e642160dcb70d7c181576f4f7ac1b5f26ad458109ab386042a2b690f31f1",
+      "dataset_name": "repo-medium-v1",
+      "evidence_counts": {
+        "conflicts": 0,
+        "coverage": 1,
+        "diagnostics": 0,
+        "effects": 0,
+        "relationships": 0,
+        "symbols": 874
+      },
+      "expected_accepted_outcome_hash": "25a0476074ef128a4c17a5f92a42204c7517bb44e973825dc06eeaaa524a470b",
+      "expected_observation_state": "degraded",
+      "expected_ready_versus_truth_result_hash": "4695b44da22d64a2160fd5f69af6f8cb7d17b814fb4f192b09097c462e3d029e",
+      "manifest_sha256": "c4160323a9930d92190854427d24debfaa2e81c9a8e165b98b9e0fcb5e648a9e",
+      "provider_condition": "rust-only",
+      "provider_members": [
+        "rust-analyzer@1.94.1"
+      ],
+      "target_identity": {
+        "relative_path": "src/ts/module_00000.ts",
+        "sha256": "a8f3fa829f0601127c4c734d8a3b055bead5b0ff672da5f547d8ba394ebf0617",
+        "symbol": "capacityValue"
+      },
+      "truth_state": "baseline",
+      "phases": [
+        "cold-initialization-reconcile",
+        "no-change-reconcile",
+        "ready-serving-query-compiler",
+        "truth-fallback-query-compiler",
+        "light-route-compiler",
+        "progressive-deep-route-compiler",
+        "catalogue-growth"
+      ],
+      "expected_eligible_files": 1024,
+      "expected_indexed_files": 1024,
+      "expected_source_bytes": 34982,
+      "preflight_phase": "no-change-reconcile"
+    },
+    {
+      "configuration_hash": "4039e642160dcb70d7c181576f4f7ac1b5f26ad458109ab386042a2b690f31f1",
+      "dataset_name": "repo-medium-v1",
+      "evidence_counts": {
+        "conflicts": 0,
+        "coverage": 1,
+        "diagnostics": 0,
+        "effects": 0,
+        "relationships": 0,
+        "symbols": 873
+      },
+      "expected_accepted_outcome_hash": "5048b055e926941bcceba1296a06bcf01ca202d2efa566c677a5cedb9d45c888",
+      "expected_observation_state": "degraded",
+      "expected_ready_versus_truth_result_hash": "12413c71a4110884d03b0f23fd84cececed6bd420748a85754628f9bcb84bc22",
+      "manifest_sha256": "c4160323a9930d92190854427d24debfaa2e81c9a8e165b98b9e0fcb5e648a9e",
+      "provider_condition": "rust-only",
+      "provider_members": [
+        "rust-analyzer@1.94.1"
+      ],
+      "target_identity": {
+        "relative_path": "src/ts/module_00000.ts",
+        "sha256": "a8f3fa829f0601127c4c734d8a3b055bead5b0ff672da5f547d8ba394ebf0617",
+        "symbol": "capacityValue"
+      },
+      "truth_state": "fixed_incremental",
+      "phases": [
+        "fixed-incremental-reconcile"
+      ],
+      "expected_eligible_files": 1023,
+      "expected_indexed_files": 1023,
+      "expected_source_bytes": 35358,
+      "preflight_phase": "fixed-incremental-reconcile"
+    },
+    {
+      "configuration_hash": "f4c1b1ad6747ae405c0d063ad25642a62dd7a1e08247dd5867e63511174b3b7e",
+      "dataset_name": "repo-medium-v1",
+      "evidence_counts": {
+        "conflicts": 768,
+        "coverage": 2,
+        "diagnostics": 0,
+        "effects": 0,
+        "relationships": 1538,
+        "symbols": 2411
+      },
+      "expected_accepted_outcome_hash": "adee614d5e333315506a30a8e9ff6efe0c6991711d390f87f028c63f7319ca5f",
+      "expected_observation_state": "degraded",
+      "expected_ready_versus_truth_result_hash": "da7d2761dc477621231ca5fe8b582cbea6c213348d803d648208fb9630a68c13",
+      "manifest_sha256": "c4160323a9930d92190854427d24debfaa2e81c9a8e165b98b9e0fcb5e648a9e",
+      "provider_condition": "combined",
+      "provider_members": [
+        "file_metadata@1.0.0",
+        "document_config@1.0.0",
+        "structural_typescript@1.0.0",
+        "safe_text_fallback@1.0.0",
+        "scip-typescript@0.4.0",
+        "rust-analyzer@1.94.1"
+      ],
+      "target_identity": {
+        "relative_path": "src/ts/module_00000.ts",
+        "sha256": "a8f3fa829f0601127c4c734d8a3b055bead5b0ff672da5f547d8ba394ebf0617",
+        "symbol": "capacityValue"
+      },
+      "truth_state": "baseline",
+      "phases": [
+        "cold-initialization-reconcile",
+        "no-change-reconcile",
+        "ready-serving-query-compiler",
+        "truth-fallback-query-compiler",
+        "light-route-compiler",
+        "progressive-deep-route-compiler",
+        "catalogue-growth"
+      ],
+      "expected_eligible_files": 1024,
+      "expected_indexed_files": 1024,
+      "expected_source_bytes": 34982,
+      "preflight_phase": "no-change-reconcile"
+    },
+    {
+      "configuration_hash": "f4c1b1ad6747ae405c0d063ad25642a62dd7a1e08247dd5867e63511174b3b7e",
+      "dataset_name": "repo-medium-v1",
+      "evidence_counts": {
+        "conflicts": 767,
+        "coverage": 2,
+        "diagnostics": 0,
+        "effects": 0,
+        "relationships": 1536,
+        "symbols": 2408
+      },
+      "expected_accepted_outcome_hash": "20d6a0b570b192bd3bd1fe59d6b3de857d25e753d40a778754fcb45b96db877d",
+      "expected_observation_state": "degraded",
+      "expected_ready_versus_truth_result_hash": "a1b2725ae216a5529b96f7dc1d7bf281631cd13c1426f6c24f037c9fb786a10d",
+      "manifest_sha256": "c4160323a9930d92190854427d24debfaa2e81c9a8e165b98b9e0fcb5e648a9e",
+      "provider_condition": "combined",
+      "provider_members": [
+        "file_metadata@1.0.0",
+        "document_config@1.0.0",
+        "structural_typescript@1.0.0",
+        "safe_text_fallback@1.0.0",
+        "scip-typescript@0.4.0",
+        "rust-analyzer@1.94.1"
+      ],
+      "target_identity": {
+        "relative_path": "src/ts/module_00000.ts",
+        "sha256": "a8f3fa829f0601127c4c734d8a3b055bead5b0ff672da5f547d8ba394ebf0617",
+        "symbol": "capacityValue"
+      },
+      "truth_state": "fixed_incremental",
+      "phases": [
+        "fixed-incremental-reconcile"
+      ],
+      "expected_eligible_files": 1023,
+      "expected_indexed_files": 1023,
+      "expected_source_bytes": 35358,
+      "preflight_phase": "fixed-incremental-reconcile"
+    },
+    {
+      "configuration_hash": "adc81f5356f609b8ca2f0e4aa5170ca0d821a091b8fdd22fe3ec00caafe61f14",
+      "dataset_name": "repo-large-v1",
+      "evidence_counts": {
+        "conflicts": 0,
+        "coverage": 0,
+        "diagnostics": 0,
+        "effects": 0,
+        "relationships": 0,
+        "symbols": 6967
+      },
+      "expected_accepted_outcome_hash": "8568826473f066d9b8a989831b47455542647829322516753f0278d722db9e00",
+      "expected_observation_state": "success",
+      "expected_ready_versus_truth_result_hash": "0c24e4ad352ba1e59f29c8595b581d6f0dfdcf1e8da79e477f10a14953382014",
+      "manifest_sha256": "81f8b8672d6a0e0aa237f1fbe1d73bcb86c89f3b24ed33eb463389c0c2e7d33b",
+      "provider_condition": "builtin-only",
+      "provider_members": [
+        "file_metadata@1.0.0",
+        "document_config@1.0.0",
+        "structural_typescript@1.0.0",
+        "safe_text_fallback@1.0.0"
+      ],
+      "target_identity": {
+        "relative_path": "src/ts/module_00000.ts",
+        "sha256": "a8f3fa829f0601127c4c734d8a3b055bead5b0ff672da5f547d8ba394ebf0617",
+        "symbol": "capacityValue"
+      },
+      "truth_state": "baseline",
+      "phases": [
+        "cold-initialization-reconcile",
+        "no-change-reconcile",
+        "ready-serving-query-compiler",
+        "truth-fallback-query-compiler",
+        "light-route-compiler",
+        "progressive-deep-route-compiler",
+        "catalogue-growth"
+      ],
+      "expected_eligible_files": 8192,
+      "expected_indexed_files": 8192,
+      "expected_source_bytes": 286056,
+      "preflight_phase": "no-change-reconcile"
+    },
+    {
+      "configuration_hash": "adc81f5356f609b8ca2f0e4aa5170ca0d821a091b8fdd22fe3ec00caafe61f14",
+      "dataset_name": "repo-large-v1",
+      "evidence_counts": {
+        "conflicts": 0,
+        "coverage": 0,
+        "diagnostics": 0,
+        "effects": 0,
+        "relationships": 0,
+        "symbols": 6966
+      },
+      "expected_accepted_outcome_hash": "afe8d745a722721dc6106c16ab826c61a69c37b8ff1ac720a0ef921eff7f0262",
+      "expected_observation_state": "success",
+      "expected_ready_versus_truth_result_hash": "a4384c1f0d0f3338e775074c899e81cdd2aa90a471ea3d886b225ef0461570c8",
+      "manifest_sha256": "81f8b8672d6a0e0aa237f1fbe1d73bcb86c89f3b24ed33eb463389c0c2e7d33b",
+      "provider_condition": "builtin-only",
+      "provider_members": [
+        "file_metadata@1.0.0",
+        "document_config@1.0.0",
+        "structural_typescript@1.0.0",
+        "safe_text_fallback@1.0.0"
+      ],
+      "target_identity": {
+        "relative_path": "src/ts/module_00000.ts",
+        "sha256": "a8f3fa829f0601127c4c734d8a3b055bead5b0ff672da5f547d8ba394ebf0617",
+        "symbol": "capacityValue"
+      },
+      "truth_state": "fixed_incremental",
+      "phases": [
+        "fixed-incremental-reconcile"
+      ],
+      "expected_eligible_files": 8191,
+      "expected_indexed_files": 8191,
+      "expected_source_bytes": 289698,
+      "preflight_phase": "fixed-incremental-reconcile"
+    },
+    {
+      "configuration_hash": "91f400835a5ae3dee3850e551934851d12ea4b417d7d1b72dd87272fcc8ca6d8",
+      "dataset_name": "repo-large-v1",
+      "evidence_counts": {
+        "conflicts": 6144,
+        "coverage": 1,
+        "diagnostics": 0,
+        "effects": 0,
+        "relationships": 12290,
+        "symbols": 19256
+      },
+      "expected_accepted_outcome_hash": "b5efc4c58fe527c6fde30f4ae5f08d5cfed4e9aade8ab27387e72f1882f6bcd6",
+      "expected_observation_state": "success",
+      "expected_ready_versus_truth_result_hash": "89e26784004f1972021503c168364abc72d35d779f84112cb2125a2d22e7a17d",
+      "manifest_sha256": "81f8b8672d6a0e0aa237f1fbe1d73bcb86c89f3b24ed33eb463389c0c2e7d33b",
+      "provider_condition": "typescript-only",
+      "provider_members": [
+        "scip-typescript@0.4.0"
+      ],
+      "target_identity": {
+        "relative_path": "src/ts/module_00000.ts",
+        "sha256": "a8f3fa829f0601127c4c734d8a3b055bead5b0ff672da5f547d8ba394ebf0617",
+        "symbol": "capacityValue"
+      },
+      "truth_state": "baseline",
+      "phases": [
+        "cold-initialization-reconcile",
+        "no-change-reconcile",
+        "ready-serving-query-compiler",
+        "truth-fallback-query-compiler",
+        "light-route-compiler",
+        "progressive-deep-route-compiler",
+        "catalogue-growth"
+      ],
+      "expected_eligible_files": 8192,
+      "expected_indexed_files": 8192,
+      "expected_source_bytes": 286056,
+      "preflight_phase": "no-change-reconcile"
+    },
+    {
+      "configuration_hash": "91f400835a5ae3dee3850e551934851d12ea4b417d7d1b72dd87272fcc8ca6d8",
+      "dataset_name": "repo-large-v1",
+      "evidence_counts": {
+        "conflicts": 6143,
+        "coverage": 1,
+        "diagnostics": 0,
+        "effects": 0,
+        "relationships": 12288,
+        "symbols": 19253
+      },
+      "expected_accepted_outcome_hash": "cbb58575e992eb15da57f57a0bfdf7eb72fe0db610a2d9fc9d3dfc58234675fb",
+      "expected_observation_state": "success",
+      "expected_ready_versus_truth_result_hash": "b3ab5687bb895eba245006049fc5eeb4a5bc4dfb6059bc2ba44eb79c24dcd675",
+      "manifest_sha256": "81f8b8672d6a0e0aa237f1fbe1d73bcb86c89f3b24ed33eb463389c0c2e7d33b",
+      "provider_condition": "typescript-only",
+      "provider_members": [
+        "scip-typescript@0.4.0"
+      ],
+      "target_identity": {
+        "relative_path": "src/ts/module_00000.ts",
+        "sha256": "a8f3fa829f0601127c4c734d8a3b055bead5b0ff672da5f547d8ba394ebf0617",
+        "symbol": "capacityValue"
+      },
+      "truth_state": "fixed_incremental",
+      "phases": [
+        "fixed-incremental-reconcile"
+      ],
+      "expected_eligible_files": 8191,
+      "expected_indexed_files": 8191,
+      "expected_source_bytes": 289698,
+      "preflight_phase": "fixed-incremental-reconcile"
+    },
+    {
+      "configuration_hash": "4039e642160dcb70d7c181576f4f7ac1b5f26ad458109ab386042a2b690f31f1",
+      "dataset_name": "repo-large-v1",
+      "evidence_counts": {
+        "conflicts": 0,
+        "coverage": 1,
+        "diagnostics": 0,
+        "effects": 0,
+        "relationships": 0,
+        "symbols": 6967
+      },
+      "expected_accepted_outcome_hash": "62e31c682a4167404c91b87d43fe49f9c243f5f2f665a711f90dcc170d4bf2b3",
+      "expected_observation_state": "degraded",
+      "expected_ready_versus_truth_result_hash": "a56c79370882212a3fd4a0ea5f016005199683326d4e4cae304d9bd7d7b6b32b",
+      "manifest_sha256": "81f8b8672d6a0e0aa237f1fbe1d73bcb86c89f3b24ed33eb463389c0c2e7d33b",
+      "provider_condition": "rust-only",
+      "provider_members": [
+        "rust-analyzer@1.94.1"
+      ],
+      "target_identity": {
+        "relative_path": "src/ts/module_00000.ts",
+        "sha256": "a8f3fa829f0601127c4c734d8a3b055bead5b0ff672da5f547d8ba394ebf0617",
+        "symbol": "capacityValue"
+      },
+      "truth_state": "baseline",
+      "phases": [
+        "cold-initialization-reconcile",
+        "no-change-reconcile",
+        "ready-serving-query-compiler",
+        "truth-fallback-query-compiler",
+        "light-route-compiler",
+        "progressive-deep-route-compiler",
+        "catalogue-growth"
+      ],
+      "expected_eligible_files": 8192,
+      "expected_indexed_files": 8192,
+      "expected_source_bytes": 286056,
+      "preflight_phase": "no-change-reconcile"
+    },
+    {
+      "configuration_hash": "4039e642160dcb70d7c181576f4f7ac1b5f26ad458109ab386042a2b690f31f1",
+      "dataset_name": "repo-large-v1",
+      "evidence_counts": {
+        "conflicts": 0,
+        "coverage": 1,
+        "diagnostics": 0,
+        "effects": 0,
+        "relationships": 0,
+        "symbols": 6966
+      },
+      "expected_accepted_outcome_hash": "b89f01908025c336f0f16df558a4e1738d37fcfd462ce5cce42ffba6da9f2bfc",
+      "expected_observation_state": "degraded",
+      "expected_ready_versus_truth_result_hash": "8495e075e48e2c9e1d2d4119fe9b1e93aea54ad14a34046cf3483d6eb3e8c181",
+      "manifest_sha256": "81f8b8672d6a0e0aa237f1fbe1d73bcb86c89f3b24ed33eb463389c0c2e7d33b",
+      "provider_condition": "rust-only",
+      "provider_members": [
+        "rust-analyzer@1.94.1"
+      ],
+      "target_identity": {
+        "relative_path": "src/ts/module_00000.ts",
+        "sha256": "a8f3fa829f0601127c4c734d8a3b055bead5b0ff672da5f547d8ba394ebf0617",
+        "symbol": "capacityValue"
+      },
+      "truth_state": "fixed_incremental",
+      "phases": [
+        "fixed-incremental-reconcile"
+      ],
+      "expected_eligible_files": 8191,
+      "expected_indexed_files": 8191,
+      "expected_source_bytes": 289698,
+      "preflight_phase": "fixed-incremental-reconcile"
+    },
+    {
+      "configuration_hash": "f4c1b1ad6747ae405c0d063ad25642a62dd7a1e08247dd5867e63511174b3b7e",
+      "dataset_name": "repo-large-v1",
+      "evidence_counts": {
+        "conflicts": 6144,
+        "coverage": 2,
+        "diagnostics": 0,
+        "effects": 0,
+        "relationships": 12290,
+        "symbols": 19256
+      },
+      "expected_accepted_outcome_hash": "f7999af032ed1d704c26e78edc10e4a1e1226b3193b6677f18f044557760e4cd",
+      "expected_observation_state": "degraded",
+      "expected_ready_versus_truth_result_hash": "0cf86d5466416bb5c03ff14abed8df6fa4e3dfebdba7399cfe84683240710624",
+      "manifest_sha256": "81f8b8672d6a0e0aa237f1fbe1d73bcb86c89f3b24ed33eb463389c0c2e7d33b",
+      "provider_condition": "combined",
+      "provider_members": [
+        "file_metadata@1.0.0",
+        "document_config@1.0.0",
+        "structural_typescript@1.0.0",
+        "safe_text_fallback@1.0.0",
+        "scip-typescript@0.4.0",
+        "rust-analyzer@1.94.1"
+      ],
+      "target_identity": {
+        "relative_path": "src/ts/module_00000.ts",
+        "sha256": "a8f3fa829f0601127c4c734d8a3b055bead5b0ff672da5f547d8ba394ebf0617",
+        "symbol": "capacityValue"
+      },
+      "truth_state": "baseline",
+      "phases": [
+        "cold-initialization-reconcile",
+        "no-change-reconcile",
+        "ready-serving-query-compiler",
+        "truth-fallback-query-compiler",
+        "light-route-compiler",
+        "progressive-deep-route-compiler",
+        "catalogue-growth"
+      ],
+      "expected_eligible_files": 8192,
+      "expected_indexed_files": 8192,
+      "expected_source_bytes": 286056,
+      "preflight_phase": "no-change-reconcile"
+    },
+    {
+      "configuration_hash": "f4c1b1ad6747ae405c0d063ad25642a62dd7a1e08247dd5867e63511174b3b7e",
+      "dataset_name": "repo-large-v1",
+      "evidence_counts": {
+        "conflicts": 6143,
+        "coverage": 2,
+        "diagnostics": 0,
+        "effects": 0,
+        "relationships": 12288,
+        "symbols": 19253
+      },
+      "expected_accepted_outcome_hash": "ab4a0e8f150721605dcba15adf6063f418bed0fd396a97cb49f0529e95313a4a",
+      "expected_observation_state": "degraded",
+      "expected_ready_versus_truth_result_hash": "bb436bfd75088a289a6319f85a64dde9dda9b7234a83f7bed3b93033b9858a8d",
+      "manifest_sha256": "81f8b8672d6a0e0aa237f1fbe1d73bcb86c89f3b24ed33eb463389c0c2e7d33b",
+      "provider_condition": "combined",
+      "provider_members": [
+        "file_metadata@1.0.0",
+        "document_config@1.0.0",
+        "structural_typescript@1.0.0",
+        "safe_text_fallback@1.0.0",
+        "scip-typescript@0.4.0",
+        "rust-analyzer@1.94.1"
+      ],
+      "target_identity": {
+        "relative_path": "src/ts/module_00000.ts",
+        "sha256": "a8f3fa829f0601127c4c734d8a3b055bead5b0ff672da5f547d8ba394ebf0617",
+        "symbol": "capacityValue"
+      },
+      "truth_state": "fixed_incremental",
+      "phases": [
+        "fixed-incremental-reconcile"
+      ],
+      "expected_eligible_files": 8191,
+      "expected_indexed_files": 8191,
+      "expected_source_bytes": 289698,
+      "preflight_phase": "fixed-incremental-reconcile"
+    }
+  ]
+}

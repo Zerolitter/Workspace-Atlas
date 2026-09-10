@@ -1,0 +1,20 @@
+{
+  "schema_version": "1.0.0",
+  "resolution_id": "res_demo_0001",
+  "workspace_id": "ws_demo",
+  "generation_id": "gen_demo_0002",
+  "relationship_fact_id": "rel_demo_0001",
+  "resolver_policy_version": "semantic-resolution-1.0.0",
+  "status": "resolved_symbol",
+  "resolved": {
+    "kind": "symbol",
+    "value": "typescript:src/controller/open-socket.ts::openSocket"
+  },
+  "reason_code": "composed_span_match",
+  "confidence": 0.96,
+  "candidates": [],
+  "evidence": [
+    "rel_structural_call_0001",
+    "rel_scip_reference_0001"
+  ]
+}

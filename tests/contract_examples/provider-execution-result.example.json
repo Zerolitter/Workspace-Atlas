@@ -1,0 +1,64 @@
+{
+  "schema_version": "1.0.0",
+  "execution_id": "pex_demo_0001",
+  "workspace_id": "ws_demo",
+  "candidate_generation_id": "gen_demo_0002",
+  "provider": {
+    "name": "scip-typescript",
+    "version": "0.4.0",
+    "fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "configuration_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  },
+  "scope": {
+    "kind": "project",
+    "key": "project:tsconfig.json"
+  },
+  "input_fingerprint": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "status": "complete",
+  "network_isolation_state": "not_available",
+  "exit_code": 0,
+  "output": {
+    "format": "scip",
+    "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "bytes": 18432
+  },
+  "timing": {
+    "started_at": "2026-08-29T08:00:00Z",
+    "finished_at": "2026-08-29T08:00:02Z",
+    "duration_ms": 2010
+  },
+  "streams": {
+    "stdout_bytes": 231,
+    "stderr_bytes": 0,
+    "stdout_truncated": false,
+    "stderr_truncated": false
+  },
+  "documents": [
+    {
+      "provider_path": "src/controller/connection.ts",
+      "canonical_path": "src/controller/connection.ts",
+      "status": "included",
+      "raw_document_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+      "normalized_batch_hash": "2222222222222222222222222222222222222222222222222222222222222222",
+      "diagnostic_codes": []
+    },
+    {
+      "provider_path": "src/plugins/load.ts",
+      "canonical_path": "src/plugins/load.ts",
+      "status": "partial",
+      "raw_document_hash": "3333333333333333333333333333333333333333333333333333333333333333",
+      "normalized_batch_hash": "4444444444444444444444444444444444444444444444444444444444444444",
+      "diagnostic_codes": [
+        "dynamic_dispatch_unresolved"
+      ]
+    }
+  ],
+  "diagnostics": [
+    {
+      "severity": "warning",
+      "code": "dynamic_dispatch_unresolved",
+      "message": "Computed registry lookup remains unresolved.",
+      "provider_document_path": "src/plugins/load.ts"
+    }
+  ]
+}

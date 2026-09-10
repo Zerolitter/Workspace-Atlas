@@ -1,0 +1,51 @@
+{
+  "protocol_version": "1.0.0",
+  "name": "scip-typescript",
+  "version": "0.4.0",
+  "tier": "semantic_index",
+  "execution_kind": "external_process",
+  "execution_scope": "project",
+  "output_format": "scip",
+  "deterministic": true,
+  "languages": [
+    "typescript",
+    "javascript"
+  ],
+  "artifact_classes": [
+    "source",
+    "test"
+  ],
+  "project_markers": [
+    "tsconfig.json",
+    "jsconfig.json",
+    "package.json"
+  ],
+  "capabilities": [
+    "symbols",
+    "definitions",
+    "references",
+    "imports",
+    "implementations",
+    "type_definitions",
+    "coverage",
+    "diagnostics"
+  ],
+  "limitations": [
+    "dynamic dispatch is not exhaustively resolved",
+    "call-site classification may require structural composition"
+  ],
+  "invalidation": {
+    "default_scope": "project",
+    "provider_upgrade": "all_provider_output"
+  },
+  "executable": {
+    "command": "scip-typescript",
+    "arguments": [
+      "index",
+      "--output",
+      "{output_file}"
+    ],
+    "expected_output": "index.scip"
+  },
+  "fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+}
