@@ -19,13 +19,14 @@ TASK_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
 MAX_REQUEST_BYTES = 1024 * 1024
 MAX_OMP_OUTPUT_BYTES = 16 * 1024 * 1024
 SYSTEM_PROMPT = """You are the model worker in a bounded local evidence run.
-No model tools are available. Do not claim to have inspected files or Atlas results,
-and do not infer missing measurements. Perform the supplied task using only its text
-and the stated Atlas arm. Finish with exactly one JSON object and no prose:
+Use only actual tool results and supplied task text. Do not edit files or infer
+missing measurements. When Atlas is enabled, call the workspace-atlas
+atlas_status tool once with the exact workspace_root and catalogue supplied in
+the prompt before deciding the result. When Atlas is disabled, Atlas tools are
+unavailable and must not be claimed. Finish with exactly one JSON object:
 {"accepted":true|false|null,"state":"accepted|rejected|unavailable","result":"brief evidence-grounded result"}
-Set accepted true only when the requested result was actually produced from the
-provided input, false only when that input rejects it, and null when the requested
-evidence or capability is unavailable. Never emit a tool-call object.
+Set accepted true only when the requested result was actually produced, false
+only when observed evidence rejects it, and null when evidence is unavailable.
 """
 class AdapterError(RuntimeError):
     """The adapter cannot produce a grounded model observation."""
@@ -89,7 +90,7 @@ def _prepare_state(cwd: Path, atlas_mcp: Path, arm: str) -> Path:
         "providers:\n"
         "  ollama:\n"
         "    baseUrl: http://127.0.0.1:11434\n"
-        "    api: openai-responses\n"
+        "    api: openai-completions\n"
         "    auth: none\n"
         "    discovery:\n"
         "      type: ollama\n"
@@ -97,7 +98,11 @@ def _prepare_state(cwd: Path, atlas_mcp: Path, arm: str) -> Path:
         encoding="utf-8",
         newline="\n",
     )
-    (cwd / "omp-config.yml").write_text("retry:\n  enabled: false\n", encoding="utf-8", newline="\n")
+    (cwd / "omp-config.yml").write_text(
+        "retry:\n  enabled: false\ntools:\n  xdev: false\n",
+        encoding="utf-8",
+        newline="\n",
+    )
     if arm == "on":
         metadata = atlas_mcp.lstat()
         if not stat.S_ISREG(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode):
@@ -158,7 +163,31 @@ def _number(value: Any) -> int | float | None:
     return value
 
 
-def _parse_omp_output(path: Path) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+def _result_object(event: dict[str, Any]) -> dict[str, Any] | None:
+    result = event.get("result")
+    if not isinstance(result, dict):
+        return None
+    content = result.get("content")
+    if not isinstance(content, list):
+        return None
+    for part in content:
+        if not isinstance(part, dict) or part.get("type") != "text":
+            continue
+        text = part.get("text")
+        if not isinstance(text, str):
+            continue
+        try:
+            value = json.loads(text)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict):
+            return value
+    return None
+
+
+def _parse_omp_output(
+    path: Path,
+) -> tuple[dict[str, Any] | None, dict[str, Any], bool, list[dict[str, Any]]]:
     if path.stat().st_size > MAX_OMP_OUTPUT_BYTES:
         raise AdapterError("OMP output exceeds byte bound")
     events: list[dict[str, Any]] = []
@@ -172,63 +201,128 @@ def _parse_omp_output(path: Path) -> tuple[dict[str, Any] | None, dict[str, Any]
         events.append(event)
     messages = [
         event["message"] for event in events
-        if event.get("type") in ("message_end", "turn_end")
+        if event.get("type") == "message_end"
         and isinstance(event.get("message"), dict)
         and event["message"].get("role") == "assistant"
     ]
     message = messages[-1] if messages else {}
-    result = _model_result(_content_text(message))
-    usage = message.get("usage") if isinstance(message.get("usage"), dict) else {}
-    token_values = {
-        "input": _number(usage.get("input")),
-        "output": _number(usage.get("output")),
-        "total": _number(usage.get("totalTokens")),
-    }
-    tokens = token_values if any(value is not None for value in token_values.values()) else None
-    turns = [event for event in events if event.get("type") == "turn_end"]
-    tool_results = turns[-1].get("toolResults") if turns and isinstance(turns[-1].get("toolResults"), list) else None
-    tool_calls = len(tool_results) if tool_results is not None else None
-    files_read = None
-    if tool_results is not None:
-        files_read = sum(
-            1 for item in tool_results
-            if isinstance(item, dict) and item.get("toolName") == "read"
-        )
-    return result, {
-        "elapsed_ms": _number(message.get("duration")),
-        "tokens": tokens,
-        "tool_calls": tool_calls,
+    model_result = _model_result(_content_text(message))
+    token_values = {"input": 0, "output": 0, "total": 0}
+    token_observed = False
+    elapsed = 0.0
+    elapsed_observed = False
+    for assistant in messages:
+        usage = assistant.get("usage")
+        if isinstance(usage, dict):
+            for output_key, input_key in (
+                ("input", "input"), ("output", "output"), ("total", "totalTokens")
+            ):
+                value = _number(usage.get(input_key))
+                if value is not None:
+                    token_values[output_key] += value
+                    token_observed = True
+        duration = _number(assistant.get("duration"))
+        if duration is not None:
+            elapsed += duration
+            elapsed_observed = True
+    completed_tools = [
+        event for event in events if event.get("type") == "tool_execution_end"
+    ]
+    atlas_tools = [
+        event for event in completed_tools
+        if isinstance(event.get("toolName"), str)
+        and event["toolName"].startswith("mcp__workspace_atlas_")
+    ]
+    successful_atlas = [
+        event for event in atlas_tools
+        if event.get("isError") is False
+        and isinstance(event.get("result"), dict)
+        and event["result"].get("isError") is not True
+    ]
+    files_read = sum(event.get("toolName") == "read" for event in completed_tools)
+    source_bytes = 0
+    for event in completed_tools:
+        if event.get("toolName") != "read" or not isinstance(event.get("result"), dict):
+            continue
+        content = event["result"].get("content")
+        if isinstance(content, list):
+            source_bytes += sum(
+                len(part["text"].encode("utf-8"))
+                for part in content
+                if isinstance(part, dict)
+                and part.get("type") == "text"
+                and isinstance(part.get("text"), str)
+            )
+    atlas_route = None
+    atlas_runtime_ms = None
+    context_expansion = None
+    for event in successful_atlas:
+        payload = _result_object(event)
+        if payload is None:
+            continue
+        if isinstance(payload.get("atlas_route"), str):
+            atlas_route = payload["atlas_route"]
+        if _number(payload.get("atlas_runtime_ms")) is not None:
+            atlas_runtime_ms = payload["atlas_runtime_ms"]
+        if isinstance(payload.get("context_expansion"), dict):
+            context_expansion = payload["context_expansion"]
+    if atlas_tools and context_expansion is None:
+        context_expansion = {
+            "atlas_tool_calls": len(atlas_tools),
+            "atlas_tool_errors": len(atlas_tools) - len(successful_atlas),
+        }
+    evidence = [
+        event for event in events
+        if event.get("type") in ("tool_execution_start", "tool_execution_end")
+        and isinstance(event.get("toolName"), str)
+        and event["toolName"].startswith("mcp__workspace_atlas_")
+    ]
+    return model_result, {
+        "elapsed_ms": elapsed if elapsed_observed else None,
+        "tokens": token_values if token_observed else None,
+        "tool_calls": len(completed_tools),
         "files_read": files_read,
-        "source_bytes_read": None,
-        "atlas_route": None,
-        "atlas_runtime_ms": None,
-        "context_expansion": None,
-    }
+        "source_bytes_read": source_bytes,
+        "atlas_route": atlas_route,
+        "atlas_runtime_ms": atlas_runtime_ms,
+        "context_expansion": context_expansion,
+    }, bool(successful_atlas), evidence
 
 
 def run(arguments: argparse.Namespace) -> tuple[int, dict[str, Any]]:
     request = _request()
     cwd = Path.cwd()
-    repository = Path(__file__).resolve().parent.parent
+    workspace_root = Path(arguments.workspace_root).absolute()
+    catalogue = Path(arguments.catalogue).absolute()
+    if not workspace_root.is_dir():
+        raise AdapterError("Atlas workspace root is unavailable")
+    if request["arm"] == "on" and not catalogue.is_file():
+        raise AdapterError("Atlas catalogue is unavailable")
     atlas_mcp = Path(arguments.atlas_mcp).absolute()
     state = _prepare_state(cwd, atlas_mcp, request["arm"])
     (cwd / "request.json").write_bytes(_canonical(request))
+    atlas_instruction = (
+        f"Call atlas_status with workspace_root={workspace_root} and catalogue={catalogue}."
+        if request["arm"] == "on"
+        else "Atlas is disabled; no Atlas tool is available."
+    )
     prompt = (
         f"Task ID: {request['task_id']}\nRepetition: {request['repetition']}\n"
-        f"Atlas arm: {request['arm']} (ATLAS_ENABLED={os.environ['ATLAS_ENABLED']})\n\n"
-        f"Task:\n{request['prompt']}"
+        f"Atlas arm: {request['arm']} (ATLAS_ENABLED={os.environ['ATLAS_ENABLED']})\n"
+        f"{atlas_instruction}\n\nTask:\n{request['prompt']}"
     )
     (cwd / "prompt.txt").write_text(prompt + "\n", encoding="utf-8", newline="\n")
     command = [
         *arguments.omp_command,
         "-p", "--model", arguments.model, "--mode", "json", "--no-session",
-        "--no-tools", "--no-skills", "--no-rules", "--no-lsp", "--no-pty",
+        "--no-skills", "--no-rules", "--no-lsp", "--no-pty",
         "--config", str(cwd / "omp-config.yml"), "--max-time", str(arguments.max_time),
-        "--system-prompt", SYSTEM_PROMPT, "--add-dir", str(repository), prompt,
+        "--system-prompt", SYSTEM_PROMPT, "--add-dir", str(workspace_root), prompt,
     ]
     environment = os.environ.copy()
     environment["PI_CODING_AGENT_DIR"] = str(state)
     environment["OMP_WORKTREE_DIR"] = str(cwd / "omp-worktrees")
+    environment["LOCALAPPDATA"] = str(cwd / "local-app-data")
     discovery = [*arguments.omp_command, "models", "ollama", "--json"]
     with (cwd / "omp-models.json").open("xb") as stdout, (
         cwd / "omp-models.stderr.txt"
@@ -243,7 +337,13 @@ def run(arguments: argparse.Namespace) -> tuple[int, dict[str, Any]]:
         completed = subprocess.run(command, cwd=cwd, env=environment, stdout=stdout, stderr=stderr, check=False)
     if completed.returncode != 0:
         return completed.returncode, _unavailable()
-    model_result, metrics = _parse_omp_output(cwd / "omp-output.ndjson")
+    model_result, metrics, successful_atlas, atlas_events = _parse_omp_output(
+        cwd / "omp-output.ndjson"
+    )
+    if atlas_events:
+        (cwd / "atlas-tool-events.json").write_bytes(_canonical(atlas_events))
+    if request["arm"] == "on" and not successful_atlas:
+        model_result = None
     if model_result is None:
         return 0, {**_unavailable(), **metrics}
     (cwd / "model-result.json").write_bytes(_canonical(model_result))
@@ -260,6 +360,8 @@ def main(arguments: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", required=True)
     parser.add_argument("--atlas-mcp", required=True)
+    parser.add_argument("--workspace-root", required=True)
+    parser.add_argument("--catalogue", required=True)
     parser.add_argument("--max-time", type=int, default=240)
     parser.add_argument("--omp-command", nargs="+", default=["omp"])
     parsed = parser.parse_args(arguments)

@@ -204,6 +204,86 @@ def _valid_sha256(value: Any) -> bool:
     )
 
 
+def _validated_executables(manifest: dict[str, Any]) -> list[dict[str, Any]] | None:
+    executables = manifest.get("executables")
+    if not isinstance(executables, list) or not 1 <= len(executables) <= 8:
+        return None
+    names: set[str] = set()
+    for entry in executables:
+        if not isinstance(entry, dict) or set(entry) != {
+            "bytes", "file", "name", "sha256", "version",
+            "version_identity_sha256",
+        }:
+            raise ExportError("harness executable provenance is malformed")
+        name, file_name, byte_count = entry["name"], entry["file"], entry["bytes"]
+        version, version_identity = (
+            entry["version"], entry["version_identity_sha256"]
+        )
+        if (
+            not isinstance(name, str)
+            or TASK_ID.fullmatch(name) is None
+            or name in names
+            or not isinstance(file_name, str)
+            or not file_name
+            or Path(file_name).name != file_name
+            or not isinstance(byte_count, int)
+            or isinstance(byte_count, bool)
+            or not 0 <= byte_count <= 512 * 1024 * 1024
+            or not _valid_sha256(entry["sha256"])
+            or (
+                version is not None
+                and (
+                    not isinstance(version, str)
+                    or not version
+                    or len(version) > 256
+                    or any(character in version for character in "\r\n\0")
+                )
+            )
+            or (
+                version is None
+                and version_identity is not None
+            )
+            or (
+                version is not None
+                and (
+                    not _valid_sha256(version_identity)
+                    or version_identity
+                    != _hash(
+                        (
+                            json.dumps(
+                                version, sort_keys=True, separators=(",", ":"),
+                                ensure_ascii=False,
+                            )
+                            + "\n"
+                        ).encode("utf-8")
+                    )
+                )
+            )
+        ):
+            raise ExportError("harness executable provenance is malformed")
+        names.add(name)
+    if not any(
+        entry["name"] == "omp" and entry["version"] is not None
+        for entry in executables
+    ):
+        return None
+    expected_identity = _hash(
+        (
+            json.dumps(
+                executables, sort_keys=True, separators=(",", ":"),
+                ensure_ascii=False,
+            )
+            + "\n"
+        ).encode("utf-8")
+    )
+    supplied_identity = manifest.get("executable_identity_sha256")
+    if not _valid_sha256(supplied_identity):
+        return None
+    if expected_identity != supplied_identity:
+        raise ExportError("harness executable identity contradiction")
+    return executables
+
+
 def _harness_provenance(
     manifest: dict[str, Any],
     records: list[dict[str, Any]],
@@ -213,6 +293,7 @@ def _harness_provenance(
         "adapter_identity_sha256",
         "campaign_identity_sha256",
         "command_identity_sha256",
+        "executable_identity_sha256",
         "model_identity_sha256",
     )
     for field in digest_fields:
@@ -235,6 +316,7 @@ def _harness_provenance(
         for task in tasks
     ):
         raise ExportError("harness task identity is malformed")
+    executables = _validated_executables(manifest)
     identity_complete = (
         isinstance(manifest.get("adapter"), str)
         and bool(manifest["adapter"])
@@ -244,6 +326,7 @@ def _harness_provenance(
         and bool(manifest["command_display"])
         and all(isinstance(argument, str) for argument in manifest["command_display"])
         and all(_valid_sha256(manifest.get(field)) for field in digest_fields)
+        and executables is not None
         and isinstance(maximum, int)
         and not isinstance(maximum, bool)
         and 1 <= maximum <= 20
@@ -269,6 +352,7 @@ def _harness_provenance(
         campaign_material = {
             "adapter_identity_sha256": manifest["adapter_identity_sha256"],
             "command_identity_sha256": manifest["command_identity_sha256"],
+            "executable_identity_sha256": manifest["executable_identity_sha256"],
             "max_tasks": maximum,
             "model_identity_sha256": manifest["model_identity_sha256"],
             "repetitions": repetitions,

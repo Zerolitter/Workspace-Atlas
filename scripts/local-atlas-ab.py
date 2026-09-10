@@ -27,6 +27,8 @@ MAX_TIMEOUT_SECONDS = 3600.0
 MAX_DOCUMENT_BYTES = 1024 * 1024
 MAX_METRIC = (1 << 63) - 1
 MAX_RUNNER_OUTPUT_BYTES = 1024 * 1024
+MAX_EXECUTABLE_BYTES = 512 * 1024 * 1024
+MAX_VERSION_BYTES = 16 * 1024
 TASK_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
 SECRET_OPTION = re.compile(r"(?i)(?:secret|token|password|api[-_]?key|credential)")
 METRIC_FIELDS = (
@@ -197,15 +199,115 @@ def _tasks(document: dict[str, Any], selected: list[str], maximum: int) -> list[
         raise HarnessError("selected task is absent from manifest") from error
 
 
-def _adapter(document: dict[str, Any]) -> tuple[str, str, list[str]]:
-    if set(document) != {"schema_version", "adapter", "model", "command"} or document["schema_version"] != SCHEMA_VERSION:
+def _adapter(
+    document: dict[str, Any],
+) -> tuple[str, str, list[str], list[dict[str, Any]]]:
+    if (
+        set(document)
+        != {"schema_version", "adapter", "model", "command", "executables"}
+        or document["schema_version"] != SCHEMA_VERSION
+    ):
         raise HarnessError("adapter contract is malformed")
     adapter, model, command = document["adapter"], document["model"], document["command"]
     if not isinstance(adapter, str) or not adapter or len(adapter) > 128 or not isinstance(model, str) or not model or len(model) > 256:
         raise HarnessError("adapter or model identity is malformed")
     if not isinstance(command, list) or not 1 <= len(command) <= 32 or not all(isinstance(arg, str) and arg and len(arg.encode("utf-8")) <= 8192 for arg in command):
         raise HarnessError("adapter command is malformed or outside bounds")
-    return adapter, model, command
+    executables = document["executables"]
+    if not isinstance(executables, list) or not 1 <= len(executables) <= 8:
+        raise HarnessError("executable provenance is malformed")
+    return adapter, model, command, executables
+
+
+def _executable_provenance(
+    declarations: list[dict[str, Any]], workspace: Path,
+) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    names: set[str] = set()
+    environment = {
+        key: value for key, value in os.environ.items()
+        if key.upper() in {"PATH", "SYSTEMROOT", "WINDIR", "TEMP", "TMP"}
+    }
+    for declaration in declarations:
+        if not isinstance(declaration, dict) or set(declaration) != {
+            "name", "path", "version_args"
+        }:
+            raise HarnessError("executable provenance is malformed")
+        name, raw_path, version_args = (
+            declaration["name"], declaration["path"], declaration["version_args"]
+        )
+        if (
+            not isinstance(name, str)
+            or TASK_ID.fullmatch(name) is None
+            or name in names
+            or not isinstance(raw_path, str)
+            or not Path(raw_path).is_absolute()
+            or not isinstance(version_args, list)
+            or len(version_args) > 8
+            or not all(
+                isinstance(argument, str)
+                and argument
+                and len(argument.encode("utf-8")) <= 1024
+                for argument in version_args
+            )
+        ):
+            raise HarnessError("executable provenance is malformed")
+        names.add(name)
+        path = Path(raw_path).absolute()
+        metadata = path.lstat()
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or stat.S_ISLNK(metadata.st_mode)
+            or getattr(metadata, "st_file_attributes", 0) & 0x400
+            or metadata.st_size > MAX_EXECUTABLE_BYTES
+        ):
+            raise HarnessError("provenance executable is unsafe or outside bounds")
+        digest = hashlib.sha256()
+        with path.open("rb") as source:
+            while chunk := source.read(1024 * 1024):
+                digest.update(chunk)
+        version: str | None = None
+        version_identity: str | None = None
+        if version_args:
+            try:
+                completed = subprocess.run(
+                    [str(path), *version_args],
+                    cwd=workspace,
+                    env=environment,
+                    capture_output=True,
+                    timeout=10,
+                    check=False,
+                )
+            except (OSError, subprocess.TimeoutExpired) as error:
+                raise HarnessError("executable version probe failed") from error
+            output = completed.stdout
+            if (
+                completed.returncode != 0
+                or not output
+                or len(output) > MAX_VERSION_BYTES
+            ):
+                raise HarnessError("executable version probe failed")
+            try:
+                version = output.decode("utf-8").strip()
+            except UnicodeDecodeError as error:
+                raise HarnessError("executable version output is malformed") from error
+            if (
+                not version
+                or len(version) > 256
+                or any(character in version for character in "\r\n\0")
+                or re.match(r"^[A-Za-z]:[\\/]", version)
+            ):
+                raise HarnessError("executable version output is malformed")
+            version_identity = _sha256(_canonical(version))
+        result.append({
+            "bytes": metadata.st_size,
+            "file": path.name,
+            "name": name,
+            "sha256": digest.hexdigest(),
+            "version": version,
+            "version_identity_sha256": version_identity,
+        })
+    return result
 
 
 def _identity_display(value: str) -> str:
@@ -509,7 +611,9 @@ def campaign(workspace: Path, tasks_path: Path, adapter_path: Path, destination:
     task_document, task_bytes = _load_object(tasks_path, "task manifest")
     adapter_document, _ = _load_object(adapter_path, "adapter")
     chosen = _tasks(task_document, selected, maximum_tasks)
-    adapter, model, command = _adapter(adapter_document)
+    adapter, model, command, executable_declarations = _adapter(adapter_document)
+    executables = _executable_provenance(executable_declarations, workspace)
+    executable_identity = _sha256(_canonical(executables))
     adapter_identity = _sha256(_canonical({"adapter": adapter}))
     command_identity = _sha256(_canonical({"command": command}))
     model_identity = _sha256(_canonical(model))
@@ -518,6 +622,7 @@ def campaign(workspace: Path, tasks_path: Path, adapter_path: Path, destination:
     campaign_identity = _sha256(_canonical({
         "adapter_identity_sha256": adapter_identity,
         "command_identity_sha256": command_identity,
+        "executable_identity_sha256": executable_identity,
         "max_tasks": maximum_tasks,
         "model_identity_sha256": model_identity,
         "repetitions": repetitions,
@@ -538,6 +643,8 @@ def campaign(workspace: Path, tasks_path: Path, adapter_path: Path, destination:
             "campaign_identity_sha256": campaign_identity,
             "command_display": _command_display(command),
             "command_identity_sha256": command_identity,
+            "executable_identity_sha256": executable_identity,
+            "executables": executables,
             "expected_raw_count": expected_raw_count,
             "max_tasks": maximum_tasks,
             "model": _identity_display(model),
@@ -575,6 +682,7 @@ def campaign(workspace: Path, tasks_path: Path, adapter_path: Path, destination:
                         "arm": arm, "arm_workspace": relative.as_posix(),
                         "campaign_identity_sha256": campaign_identity,
                         "command_identity_sha256": command_identity,
+                        "executable_identity_sha256": executable_identity,
                         "exit_code": exit_code,
                         "kind": "local-atlas-ab-observation",
                         "model": _identity_display(model),
@@ -594,6 +702,8 @@ def campaign(workspace: Path, tasks_path: Path, adapter_path: Path, destination:
                     records.append(record)
                     _write_manifest(destination, manifest("partial"))
                     (arm_workspace / "result.json").write_bytes(_canonical(record, pretty=True))
+    if _executable_provenance(executable_declarations, workspace) != executables:
+        raise HarnessError("provenance executable changed during campaign")
     complete = manifest("complete")
     _write_manifest(destination, complete)
     return complete

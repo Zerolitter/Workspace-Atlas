@@ -43,7 +43,12 @@ create an operator-local adapter JSON:
   "schema_version": "1.0.0",
   "adapter": "json-stdio",
   "model": "operator-local-model",
-  "command": ["local-runner", "--json-stdio"]
+  "command": ["local-runner", "--json-stdio"],
+  "executables": [
+    {"name": "adapter", "path": "<ABSOLUTE_ADAPTER>", "version_args": []},
+    {"name": "atlas-mcp", "path": "<ABSOLUTE_ATLAS_MCP>", "version_args": []},
+    {"name": "omp", "path": "<ABSOLUTE_OMP>", "version_args": ["--version"]}
+  ]
 }
 ```
 
@@ -56,32 +61,53 @@ paths because each arm runs from its own directory:
 {
   "schema_version": "1.0.0",
   "adapter": "omp-json-stdio",
-  "model": "ollama/qwen2.5-coder:14b",
+  "model": "ollama/<INSTALLED_TOOL_CAPABLE_MODEL>",
   "command": [
     "py",
     "-3",
     "<WORKSPACE>\\scripts\\local-omp-json-stdio.py",
     "--model",
-    "ollama/qwen2.5-coder:14b",
+    "ollama/<INSTALLED_TOOL_CAPABLE_MODEL>",
     "--atlas-mcp",
-    "<WORKSPACE>\\target\\debug\\atlas-mcp.exe"
+    "<WORKSPACE>\\target\\debug\\atlas-mcp.exe",
+    "--workspace-root",
+    "<WORKSPACE>",
+    "--catalogue",
+    "<LOCAL_TEMP_ROOT>\\atlas-campaign.sqlite",
+    "--omp-command",
+    "<ABSOLUTE_OMP>"
+  ],
+  "executables": [
+    {"name": "adapter", "path": "<WORKSPACE>\\scripts\\local-omp-json-stdio.py", "version_args": []},
+    {"name": "atlas-mcp", "path": "<WORKSPACE>\\target\\debug\\atlas-mcp.exe", "version_args": []},
+    {"name": "omp", "path": "<ABSOLUTE_OMP>", "version_args": ["--version"]}
   ]
 }
 ```
 
 The adapter validates that the request arm agrees with `ATLAS_ENABLED`, creates
 an isolated credential-free OMP configuration in the arm directory, and exposes
-the local `atlas-mcp` command only for the ON arm. OMP JSON events, diagnostics,
-the exact request/prompt, model result (when valid), and generated configuration
-remain in that arm directory. Stdout contains only the single harness response
-object. Acceptance comes only from a schema-valid model result; an OMP exit code
-alone never becomes acceptance. OMP-reported tokens and duration are retained,
-while source bytes and Atlas metrics remain `null` unless directly measured.
+the local `atlas-mcp` command only for the ON arm. It leaves OMP tools enabled
+and presents MCP tools directly rather than as dynamic-device descriptions.
+Use an already-installed Ollama model that demonstrates native tool calls; model
+availability alone is insufficient. OMP JSON events, diagnostics, the exact
+request/prompt, actual Atlas request/result events, model result (when valid),
+and generated configuration remain in that arm directory. Stdout contains only
+the single harness response object. Acceptance comes only from a schema-valid
+model result and, for ON, a successful Atlas tool result; process success or
+model text naming a tool never becomes acceptance. Tokens, duration, tool/file
+counts, source bytes, and Atlas fields are derived only from actual OMP events.
+Unsupported measurements remain `null`.
 
-Do not put credentials in the adapter command, model name, or task IDs. The harness
-stores separate SHA-256 identities for the command, model, adapter, and task
-content. The campaign identity also binds the timeout, repetition count, task
-bound, and selected tasks. Only sanitized command/model displays are retained.
+Do not put credentials in the adapter command, model name, task IDs, executable
+paths, or version commands. The harness hashes each declared executable's
+contents, probes the declared OMP version command, and binds the sanitized
+executable records into the campaign identity. It hashes command, model,
+adapter, and task identities separately. The campaign identity also binds the
+timeout, repetition count, task bound, and selected tasks. Only sanitized
+command/model displays and executable basenames are retained. The exporter
+recomputes executable and campaign identities and fails closed on contradiction
+or missing concrete OMP version provenance.
 The harness invokes the command directly, never through a shell, and contains
 the process tree for both successful and timed-out runs. For each explicitly
 selected task and repetition it runs `off`

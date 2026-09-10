@@ -33,9 +33,19 @@ class BenchmarkEvidenceExportTests(unittest.TestCase):
 
     def write_records(self) -> list[dict[str, object]]:
         task_manifest_sha256 = "6" * 64
+        omp_version = "omp/18.1.11"
+        executables = [
+            {"bytes": 10, "file": "adapter.py", "name": "adapter", "sha256": "7" * 64, "version": None, "version_identity_sha256": None},
+            {"bytes": 20, "file": "atlas-mcp.exe", "name": "atlas-mcp", "sha256": "8" * 64, "version": None, "version_identity_sha256": None},
+            {"bytes": 30, "file": "omp.exe", "name": "omp", "sha256": "9" * 64, "version": omp_version, "version_identity_sha256": hashlib.sha256((json.dumps(omp_version, sort_keys=True, separators=(",", ":")) + "\n").encode()).hexdigest()},
+        ]
+        executable_identity = hashlib.sha256(
+            (json.dumps(executables, sort_keys=True, separators=(",", ":")) + "\n").encode()
+        ).hexdigest()
         identity = {
             "adapter_identity_sha256": "1" * 64,
             "command_identity_sha256": "3" * 64,
+            "executable_identity_sha256": executable_identity,
             "model_identity_sha256": "4" * 64,
         }
         campaign_material = {
@@ -91,6 +101,8 @@ class BenchmarkEvidenceExportTests(unittest.TestCase):
             "campaign_identity_sha256": identity["campaign_identity_sha256"],
             "command_display": ["python", "runner.py"],
             "command_identity_sha256": identity["command_identity_sha256"],
+            "executable_identity_sha256": identity["executable_identity_sha256"],
+            "executables": executables,
             "expected_raw_count": len(records),
             "max_tasks": 1,
             "model": "fixture-local",
@@ -171,6 +183,24 @@ class BenchmarkEvidenceExportTests(unittest.TestCase):
         )
         self.assertNotIn("identity", manifest)
 
+    def test_missing_executable_provenance_cannot_be_complete(self) -> None:
+        self.write_records()
+        sidecar_path = self.workspace / "harness-manifest.json"
+        sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+        del sidecar["executables"]
+        del sidecar["executable_identity_sha256"]
+        sidecar_path.write_text(json.dumps(sidecar), encoding="utf-8")
+
+        result = self.run_export()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        manifest = json.loads(
+            (self.destination / "manifest.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(manifest["state"], "partial")
+        self.assertIn("harness_identity", manifest["missing_provenance"])
+        self.assertNotIn("identity", manifest)
+
     def test_invalid_harness_pairing_is_partial_with_explicit_missing_provenance(
         self,
     ) -> None:
@@ -214,6 +244,18 @@ class BenchmarkEvidenceExportTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(self.destination.exists())
 
+    def test_rejects_executable_provenance_contradiction(self) -> None:
+        self.write_records()
+        sidecar_path = self.workspace / "harness-manifest.json"
+        sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+        sidecar["executables"][0]["sha256"] = "a" * 64
+        sidecar_path.write_text(json.dumps(sidecar), encoding="utf-8")
+
+        result = self.run_export()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.destination.exists())
+
     def test_rejects_task_id_outside_harness_contract(self) -> None:
         records = self.write_records()
         for record in records:
@@ -229,6 +271,7 @@ class BenchmarkEvidenceExportTests(unittest.TestCase):
         campaign_material = {
             "adapter_identity_sha256": sidecar["adapter_identity_sha256"],
             "command_identity_sha256": sidecar["command_identity_sha256"],
+            "executable_identity_sha256": sidecar["executable_identity_sha256"],
             "max_tasks": sidecar["max_tasks"],
             "model_identity_sha256": sidecar["model_identity_sha256"],
             "repetitions": sidecar["repetitions"],

@@ -36,6 +36,8 @@ class LocalAtlasAbTests(unittest.TestCase):
         self.workspace = Path(self.temporary.name) / "workspace"
         self.workspace.mkdir()
         self.destination = self.workspace / "campaign"
+        self.fake_atlas = self.workspace / "fake-atlas-mcp"
+        self.fake_atlas.write_bytes(b"fixture atlas mcp")
         self.fake = self.workspace / "fake_runner.py"
         self.fake.write_text(textwrap.dedent("""\
             import json, subprocess, sys, time
@@ -92,6 +94,11 @@ class LocalAtlasAbTests(unittest.TestCase):
             "command": [
                 sys.executable, str(self.fake), "--access-token",
                 "sensitive-fixture-value", "second-sensitive-fixture-value",
+            ],
+            "executables": [
+                {"name": "adapter", "path": str(self.fake), "version_args": []},
+                {"name": "atlas-mcp", "path": str(self.fake_atlas), "version_args": []},
+                {"name": "omp", "path": sys.executable, "version_args": ["--version"]},
             ],
         }), encoding="utf-8")
 
@@ -154,6 +161,11 @@ class LocalAtlasAbTests(unittest.TestCase):
         )
         self.assertEqual(len(manifest["command_identity_sha256"]), 64)
         self.assertEqual(len(manifest["model_identity_sha256"]), 64)
+        self.assertEqual(len(manifest["executable_identity_sha256"]), 64)
+        self.assertEqual(
+            [entry["name"] for entry in manifest["executables"]],
+            ["adapter", "atlas-mcp", "omp"],
+        )
 
     def test_success_without_acceptance_stays_unavailable_and_malformed_is_failure(self) -> None:
         result = self.run_harness(
@@ -291,6 +303,31 @@ class LocalAtlasAbTests(unittest.TestCase):
             second_manifest["campaign_identity_sha256"],
         )
 
+    def test_executable_contents_are_material_campaign_identity(self) -> None:
+        first = self.run_harness(
+            "alpha", destination=self.workspace / "campaign-before",
+            extra=("--repetitions", "1"),
+        )
+        self.fake.write_text(
+            self.fake.read_text(encoding="utf-8") + "\n# content identity change\n",
+            encoding="utf-8",
+        )
+        second = self.run_harness(
+            "alpha", destination=self.workspace / "campaign-after",
+            extra=("--repetitions", "1"),
+        )
+        self.assertEqual(first.returncode, 0, first.stderr)
+        self.assertEqual(second.returncode, 0, second.stderr)
+        before, after = json.loads(first.stdout), json.loads(second.stdout)
+        self.assertNotEqual(
+            before["executable_identity_sha256"],
+            after["executable_identity_sha256"],
+        )
+        self.assertNotEqual(
+            before["campaign_identity_sha256"],
+            after["campaign_identity_sha256"],
+        )
+
     def test_runner_wall_time_is_independent_and_adapter_timing_is_preserved(
         self,
     ) -> None:
@@ -381,9 +418,14 @@ class LocalOmpJsonStdioTests(unittest.TestCase):
         self.atlas_mcp = Path(self.temporary.name) / "atlas-mcp.exe"
         self.atlas_mcp.write_bytes(b"fixture")
         self.fake_omp = Path(self.temporary.name) / "fake-omp.py"
+        self.catalogue = Path(self.temporary.name) / "atlas.sqlite"
+        self.catalogue.write_bytes(b"fixture catalogue")
         self.fake_omp.write_text(textwrap.dedent("""\
             import json, pathlib, sys
             configured = (pathlib.Path.cwd() / ".mcp.json").is_file()
+            disabling = {"--no-tools", "--no-extensions"}
+            if configured and any(argument in disabling or argument.startswith("--tools") for argument in sys.argv):
+                raise SystemExit(9)
             if "Return no accepted result." in " ".join(sys.argv):
                 result = {"result": "model omitted its acceptance decision"}
             else:
@@ -392,6 +434,22 @@ class LocalOmpJsonStdioTests(unittest.TestCase):
                     "state": "accepted" if configured else "rejected",
                     "result": "observed model result",
                 }
+            if configured and "models" not in sys.argv:
+                tool_result = {
+                    "atlas_route": "LIGHT",
+                    "atlas_runtime_ms": 4,
+                    "context_expansion": {"records": 3},
+                }
+                print(json.dumps({
+                    "type": "tool_execution_start", "toolCallId": "call-1",
+                    "toolName": "mcp__workspace_atlas_atlas_status", "args": {},
+                }))
+                print(json.dumps({
+                    "type": "tool_execution_end", "toolCallId": "call-1",
+                    "toolName": "mcp__workspace_atlas_atlas_status",
+                    "result": {"content": [{"type": "text", "text": json.dumps(tool_result)}], "isError": False},
+                    "isError": False,
+                }))
             message = {
                 "role": "assistant",
                 "content": [{"type": "text", "text": json.dumps(result)}],
@@ -402,10 +460,7 @@ class LocalOmpJsonStdioTests(unittest.TestCase):
                 },
             }
             print(json.dumps({"type": "message_end", "message": message}))
-            print(json.dumps({
-                "type": "turn_end", "message": message,
-                "toolResults": [{"toolName": "read"}, {"toolName": "mcp__workspace_atlas__atlas_status"}],
-            }))
+            print(json.dumps({"type": "turn_end", "message": message, "toolResults": []}))
             print("diagnostic stays off stdout", file=sys.stderr)
         """), encoding="utf-8", newline="\n")
 
@@ -423,6 +478,8 @@ class LocalOmpJsonStdioTests(unittest.TestCase):
             [
                 sys.executable, str(OMP_ADAPTER),
                 "--model", "ollama/qwen2.5-coder:14b",
+                "--workspace-root", str(self.arm),
+                "--catalogue", str(self.catalogue),
                 "--atlas-mcp", str(self.atlas_mcp),
                 "--omp-command", sys.executable, str(self.fake_omp),
             ],
@@ -447,12 +504,14 @@ class LocalOmpJsonStdioTests(unittest.TestCase):
             observation["accepted_outcome"],
             {"accepted": True, "state": "accepted"},
         )
-        self.assertEqual(observation["tokens"], {"input": 7, "output": 5, "total": 12})
-        self.assertEqual(observation["tool_calls"], 2)
-        self.assertEqual(observation["files_read"], 1)
-        self.assertIsNone(observation["source_bytes_read"])
-        self.assertTrue((self.arm / ".mcp.json").is_file())
+        self.assertEqual(observation["tool_calls"], 1)
+        self.assertEqual(observation["files_read"], 0)
+        self.assertEqual(observation["source_bytes_read"], 0)
+        self.assertEqual(observation["atlas_route"], "LIGHT")
+        self.assertEqual(observation["atlas_runtime_ms"], 4)
+        self.assertEqual(observation["context_expansion"], {"records": 3})
         self.assertTrue((self.arm / "omp-output.ndjson").is_file())
+        self.assertTrue((self.arm / "atlas-tool-events.json").is_file())
         self.assertEqual(
             json.loads((self.arm / "model-result.json").read_text(encoding="utf-8"))["result"],
             "observed model result",
