@@ -168,7 +168,7 @@ discovery reports `route_decision`, `light_payload`, `progressive_execution`,
 `deep_context_ir`, and `materialization` available. Materialization availability
 describes the bounded, explicit, CLI-only response-lifetime capability.
 MCP materialization remains disabled. Availability describes runtime features,
-not durable V2 lifecycle storage: bounded `1.0.0` reads reject V2 lookup as
+not durable V2 lifecycle storage: bounded legacy reads reject V2 lookup as
 `durable_contract_unavailable`.
 
 Intent and floor take precedence over caller sufficiency: `allow` starts at the
