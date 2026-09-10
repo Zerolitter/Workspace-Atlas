@@ -471,20 +471,14 @@ fn unsupported_modern_version_reports_both_supported_dates() {
 fn legacy_lifecycle_valid_call_and_every_tool_rejects_unknown_arguments() {
     let database_directory = tempfile::tempdir().unwrap();
     let workspace_directory = tempfile::tempdir().unwrap();
+    let workspace_root = workspace_directory.path().canonicalize().unwrap();
     let config = Config::parse(
         "schema_version = \"1.1.0\"\n[workspace]\ndisplay_name = \"mcp-conformance\"\n",
     )
     .unwrap();
     let catalogue = database_directory.path().join("atlas.sqlite");
     let connection = init_catalogue(&catalogue, &config).unwrap();
-    register_workspace(
-        &connection,
-        workspace_directory.path(),
-        &config,
-        &catalogue,
-        "1.0.0",
-    )
-    .unwrap();
+    register_workspace(&connection, &workspace_root, &config, &catalogue, "1.0.0").unwrap();
 
     let mut session = McpSession::spawn();
     initialize_legacy(&mut session);
@@ -504,7 +498,7 @@ fn legacy_lifecycle_valid_call_and_every_tool_rejects_unknown_arguments() {
         "params": {
             "name": "atlas_status",
             "arguments": {
-                "workspace_root": workspace_directory.path(),
+                "workspace_root": &workspace_root,
                 "catalogue": catalogue
             }
         }
@@ -521,7 +515,7 @@ fn legacy_lifecycle_valid_call_and_every_tool_rejects_unknown_arguments() {
             "params": {
                 "name": tool["name"],
                 "arguments": {
-                    "workspace_root": workspace_directory.path(),
+                    "workspace_root": &workspace_root,
                     "unknown_argument": true
                 }
             }

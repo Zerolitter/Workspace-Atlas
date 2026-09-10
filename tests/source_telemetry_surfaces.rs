@@ -73,9 +73,10 @@ fn run_mcp_source(
 fn source_cli_and_mcp_share_optional_task_session_attribution_and_legacy_behavior() {
     let db_dir = tempfile::tempdir().unwrap();
     let workspace_dir = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(workspace_dir.path().join("src")).unwrap();
+    let workspace_root = workspace_dir.path().canonicalize().unwrap();
+    std::fs::create_dir_all(workspace_root.join("src")).unwrap();
     std::fs::write(
-        workspace_dir.path().join("src/a.ts"),
+        workspace_root.join("src/a.ts"),
         "export function alpha() { return 1; }\n",
     )
     .unwrap();
@@ -86,7 +87,7 @@ fn source_cli_and_mcp_share_optional_task_session_attribution_and_legacy_behavio
     let catalogue = db_dir.path().join("atlas.sqlite");
     let conn = init_catalogue(&catalogue, &config).unwrap();
     let workspace =
-        register_workspace(&conn, workspace_dir.path(), &config, &catalogue, "1.0.0").unwrap();
+        register_workspace(&conn, &workspace_root, &config, &catalogue, "1.0.0").unwrap();
     discovery::reconcile(&workspace, &conn, &config).unwrap();
     let generation_id: String = conn
         .query_row(
@@ -108,23 +109,17 @@ fn source_cli_and_mcp_share_optional_task_session_attribution_and_legacy_behavio
     )
     .unwrap();
 
-    let cli_attributed = run_cli_source(
-        workspace_dir.path(),
-        &catalogue,
-        Some(&session.task_session_id),
-    );
-    let mcp_attributed = run_mcp_source(
-        workspace_dir.path(),
-        &catalogue,
-        Some(&session.task_session_id),
-    );
+    let cli_attributed =
+        run_cli_source(&workspace_root, &catalogue, Some(&session.task_session_id));
+    let mcp_attributed =
+        run_mcp_source(&workspace_root, &catalogue, Some(&session.task_session_id));
     assert_eq!(cli_attributed, mcp_attributed);
     let attributed_events = task_session_events(&conn, &session.task_session_id).unwrap();
     assert_eq!(attributed_events.len(), 2);
     assert_ne!(attributed_events[0].event_id, attributed_events[1].event_id);
 
-    let cli_legacy = run_cli_source(workspace_dir.path(), &catalogue, None);
-    let mcp_legacy = run_mcp_source(workspace_dir.path(), &catalogue, None);
+    let cli_legacy = run_cli_source(&workspace_root, &catalogue, None);
+    let mcp_legacy = run_mcp_source(&workspace_root, &catalogue, None);
     assert_eq!(cli_legacy, mcp_legacy);
     assert_eq!(
         cli_attributed, cli_legacy,
@@ -145,7 +140,7 @@ fn source_cli_and_mcp_share_optional_task_session_attribution_and_legacy_behavio
         "params": {
             "name": "atlas_source",
             "arguments": {
-                "workspace_root": workspace_dir.path(),
+                "workspace_root": &workspace_root,
                 "path": "src/a.ts",
                 "catalogue": catalogue,
                 "task_session_id": 42,
