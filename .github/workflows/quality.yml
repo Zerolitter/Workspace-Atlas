@@ -51,7 +51,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rustup toolchain install '${{ matrix.rust }}' --profile minimal --component rustfmt --component clippy
+          rustup toolchain install '${{ matrix.rust }}' --profile minimal --component rustfmt --component clippy --component rust-analyzer
           rustup override set '${{ matrix.rust }}'
           rustc --version --verbose
           cargo --version --verbose

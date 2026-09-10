@@ -52,7 +52,7 @@ fn registered_config_fixture(
     let connection = init_catalogue(&catalogue, &initialization_config).unwrap();
     let workspace = register_workspace(
         &connection,
-        workspace_directory.path(),
+        &workspace_directory.path().canonicalize().unwrap(),
         &initialization_config,
         &catalogue,
         "1.2.0",
@@ -297,7 +297,7 @@ fn old_catalogue_requires_config_once_then_uses_application_owned_copy() {
     let connection = init_catalogue(&catalogue, &config).unwrap();
     register_workspace(
         &connection,
-        workspace_directory.path(),
+        &workspace_directory.path().canonicalize().unwrap(),
         &config,
         &catalogue,
         "1.0.0",

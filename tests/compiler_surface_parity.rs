@@ -59,7 +59,7 @@ fn fixture(name: &str) -> Fixture {
     let connection = init_catalogue(&catalogue, &config).unwrap();
     let workspace = register_workspace(
         &connection,
-        workspace_directory.path(),
+        &workspace_directory.path().canonicalize().unwrap(),
         &config,
         &catalogue,
         "1.0.0",
