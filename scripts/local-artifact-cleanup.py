@@ -5,8 +5,8 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import re
 from pathlib import Path, PurePath
+import re
 import stat
 import sys
 
@@ -24,7 +24,10 @@ FIXED_CANDIDATES = (
 KNOWN_TARGET_NAMES = frozenset({"debug", "release", "doc", ".rustc_info.json", "CACHEDIR.TAG"})
 PROTECTED_MARKERS = (
     "manifest", "raw", "observation", "accepted-outcome", "accepted_outcome",
-    "evidence", "portable-bundle", "portable_bundle", "results.csv",
+    "evidence", "portable-bundle", "portable_bundle", "results.csv", "summary",
+    "attestation", "preflight", "result", "report", "execution-plan",
+    "label-state", "label_state", "metric", "measurement", "outcome", "sample",
+    "provenance",
 )
 PRESERVE_FILE = ".atlas-preserve"
 SCRATCH_NAME = re.compile(
@@ -46,6 +49,15 @@ def _relative_text(path: Path, workspace: Path) -> str:
 
 def _is_reparse(metadata: os.stat_result) -> bool:
     return bool(getattr(metadata, "st_file_attributes", 0) & 0x400)
+
+
+def _identity(metadata: os.stat_result) -> tuple[int, int, int, int]:
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+    )
 
 
 def _metadata(path: Path) -> os.stat_result:
@@ -92,12 +104,12 @@ def _protected_name(name: str) -> bool:
 def _contains_preserve_marker(directory: Path) -> bool:
     marker = directory / PRESERVE_FILE
     try:
-        metadata = _metadata(marker)
+        _metadata(marker)
     except FileNotFoundError:
         return False
     except OSError:
         return True
-    return not _is_link_or_reparse(metadata)
+    return True
 
 
 def _collect_candidate(
@@ -107,6 +119,7 @@ def _collect_candidate(
     proposed: list[dict[str, object]],
     protected: list[dict[str, object]],
     unknown: list[dict[str, object]],
+    identities: dict[str, tuple[int, int, int, int]],
     protected_ancestor: bool = False,
 ) -> None:
     relative = _relative_text(path, workspace)
@@ -121,8 +134,18 @@ def _collect_candidate(
         unknown.append(_item(relative, "unknown", 0, "link_or_reparse_point"))
         return
     if stat.S_ISREG(metadata.st_mode):
-        target = protected if protected_ancestor or _protected_name(path.name) else proposed
+        is_protected = (
+            protected_ancestor
+            or _protected_name(path.name)
+            or (
+                artifact_class == "benchmark_scratch"
+                and path.suffix.lower() in {".json", ".ndjson", ".csv"}
+            )
+        )
+        target = protected if is_protected else proposed
         target.append(_item(relative, artifact_class, metadata.st_size))
+        if not is_protected:
+            identities[relative] = _identity(metadata)
         return
     if not stat.S_ISDIR(metadata.st_mode):
         unknown.append(_item(relative, "unknown", 0, "unsupported_file_type"))
@@ -135,7 +158,8 @@ def _collect_candidate(
         return
     for child in children:
         _collect_candidate(
-            child, workspace, artifact_class, proposed, protected, unknown, preserved
+            child, workspace, artifact_class, proposed, protected, unknown,
+            identities, preserved
         )
 
 
@@ -151,7 +175,27 @@ def _safe_scratch(raw: str, workspace: Path) -> tuple[Path | None, dict[str, obj
         )
     return workspace / supplied, None
 
-def _safe_delete_metadata(path: Path, workspace: Path) -> os.stat_result:
+
+def _ambiguous_ancestor(path: Path, workspace: Path) -> Path | None:
+    current = workspace
+    for part in path.relative_to(workspace).parts[:-1]:
+        current /= part
+        try:
+            metadata = _metadata(current)
+        except FileNotFoundError:
+            return None
+        except OSError:
+            return current
+        if _is_link_or_reparse(metadata) or not stat.S_ISDIR(metadata.st_mode):
+            return current
+    return None
+
+
+def _safe_delete_metadata(
+    path: Path,
+    workspace: Path,
+    expected: tuple[int, int, int, int],
+) -> os.stat_result:
     relative = path.relative_to(workspace)
     current = workspace
     for part in relative.parts[:-1]:
@@ -160,8 +204,16 @@ def _safe_delete_metadata(path: Path, workspace: Path) -> os.stat_result:
         if _is_link_or_reparse(metadata) or not stat.S_ISDIR(metadata.st_mode):
             raise AuditError("candidate ancestry changed before deletion")
     metadata = _metadata(path)
-    if _is_link_or_reparse(metadata) or not stat.S_ISREG(metadata.st_mode):
+    if (
+        _is_link_or_reparse(metadata)
+        or not stat.S_ISREG(metadata.st_mode)
+        or _identity(metadata) != expected
+    ):
         raise AuditError("candidate changed before deletion")
+    try:
+        path.resolve(strict=True).relative_to(workspace.resolve(strict=True))
+    except (OSError, ValueError) as error:
+        raise AuditError("candidate physical path escapes workspace") from error
     return metadata
 
 
@@ -191,29 +243,48 @@ def audit(workspace: Path, scratches: list[str], apply: bool) -> dict[str, objec
     except OSError:
         unknown.append(_item("target", "unknown", 0, "inspection_failed"))
         target_metadata = None
-    if target_metadata is not None and not _is_link_or_reparse(target_metadata) and stat.S_ISDIR(target_metadata.st_mode):
-        try:
-            for child in sorted(target.iterdir(), key=lambda value: value.name):
-                if child.name not in KNOWN_TARGET_NAMES:
-                    unknown.append(_item(_relative_text(child, workspace), "unknown", _tree_bytes(child), "unclassified_target_content"))
-        except OSError:
-            unknown.append(_item("target", "unknown", 0, "inspection_failed"))
+    if target_metadata is not None:
+        if _is_link_or_reparse(target_metadata) or not stat.S_ISDIR(target_metadata.st_mode):
+            unknown.append(_item("target", "unknown", 0, "link_or_reparse_point"))
+        else:
+            try:
+                for child in sorted(target.iterdir(), key=lambda value: value.name):
+                    if child.name not in KNOWN_TARGET_NAMES:
+                        unknown.append(_item(_relative_text(child, workspace), "unknown", _tree_bytes(child), "unclassified_target_content"))
+            except OSError:
+                unknown.append(_item("target", "unknown", 0, "inspection_failed"))
 
     proposed: list[dict[str, object]] = []
     protected: list[dict[str, object]] = []
+    identities: dict[str, tuple[int, int, int, int]] = {}
     for path, artifact_class in candidates:
-        _collect_candidate(path, workspace, artifact_class, proposed, protected, unknown)
+        ambiguous = _ambiguous_ancestor(path, workspace)
+        if ambiguous is not None:
+            unknown.append(_item(
+                _relative_text(ambiguous, workspace), "unknown", 0,
+                "link_or_reparse_point"
+            ))
+            continue
+        _collect_candidate(
+            path, workspace, artifact_class, proposed, protected, unknown,
+            identities
+        )
 
     key = lambda item: str(item["path"])
     proposed.sort(key=key)
     protected.sort(key=key)
-    unknown.sort(key=key)
+    unique_unknown = {
+        (str(item["path"]), str(item.get("reason", ""))): item for item in unknown
+    }
+    unknown = sorted(unique_unknown.values(), key=key)
     deleted: list[dict[str, object]] = []
     if apply:
         for item in proposed:
             path = workspace / str(item["path"])
             try:
-                _safe_delete_metadata(path, workspace)
+                _safe_delete_metadata(
+                    path, workspace, identities[str(item["path"])]
+                )
                 path.unlink()
                 deleted.append(item)
             except FileNotFoundError:

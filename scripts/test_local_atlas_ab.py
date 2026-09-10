@@ -3,17 +3,25 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import textwrap
+import time
 import unittest
+from unittest import mock
 
 SCRIPT = Path(__file__).with_name("local-atlas-ab.py")
 EXPORTER = Path(__file__).with_name("benchmark-evidence-export.py")
 EXAMPLE = Path(__file__).with_name("local-ab-example-tasks.json")
+SPEC = importlib.util.spec_from_file_location("local_atlas_ab", SCRIPT)
+assert SPEC is not None and SPEC.loader is not None
+harness = importlib.util.module_from_spec(SPEC)
+sys.modules[SPEC.name] = harness
+SPEC.loader.exec_module(harness)
 
 
 class LocalAtlasAbTests(unittest.TestCase):
@@ -25,18 +33,27 @@ class LocalAtlasAbTests(unittest.TestCase):
         self.destination = self.workspace / "campaign"
         self.fake = self.workspace / "fake_runner.py"
         self.fake.write_text(textwrap.dedent("""\
-            import json, os, sys, time
+            import json, subprocess, sys, time
             request = json.load(sys.stdin)
             if request["task_id"] == "slow":
                 time.sleep(0.2)
             if request["task_id"] == "oversized":
                 sys.stdout.write("x" * (1024 * 1024 + 1024))
                 raise SystemExit(0)
+            if request["task_id"] == "lingering-child":
+                subprocess.Popen([
+                    sys.executable,
+                    "-c",
+                    "import pathlib,time; time.sleep(0.3); pathlib.Path('descendant-survived').write_text('bad')",
+                ])
             if request["task_id"] == "malformed":
                 print("not json")
                 raise SystemExit(0)
             if request["task_id"] == "no-acceptance":
                 print(json.dumps({"elapsed_ms": 3}))
+                raise SystemExit(0)
+            if request["task_id"] == "nonfinite":
+                print('{"elapsed_ms":NaN}')
                 raise SystemExit(0)
             on = request["arm"] == "on"
             print(json.dumps({
@@ -60,12 +77,17 @@ class LocalAtlasAbTests(unittest.TestCase):
                 {"id": "malformed", "prompt": "Return malformed output."},
                 {"id": "slow", "prompt": "Exercise the runner timeout."},
                 {"id": "oversized", "prompt": "Exercise the output byte bound."},
+                {"id": "lingering-child", "prompt": "Exercise descendant containment."},
+                {"id": "nonfinite", "prompt": "Return a non-finite metric."},
             ],
         }), encoding="utf-8")
         self.adapter = self.workspace / "adapter.json"
         self.adapter.write_text(json.dumps({
             "schema_version": "1.0.0", "adapter": "fixture-json-stdio", "model": "fixture-local",
-            "command": [sys.executable, str(self.fake), "--access-token", "sensitive-fixture-value"],
+            "command": [
+                sys.executable, str(self.fake), "--access-token",
+                "sensitive-fixture-value", "second-sensitive-fixture-value",
+            ],
         }), encoding="utf-8")
 
     def run_harness(self, *tasks: str, destination: Path | None = None, extra: tuple[str, ...] = ()) -> subprocess.CompletedProcess[str]:
@@ -80,11 +102,18 @@ class LocalAtlasAbTests(unittest.TestCase):
         arguments.extend(extra)
         return subprocess.run(arguments, capture_output=True, text=True, check=False)
 
+    def records(self) -> list[dict[str, object]]:
+        return [
+            json.loads(line)
+            for line in (self.destination / "raw.ndjson")
+            .read_text(encoding="utf-8")
+            .splitlines()
+        ]
+
     def test_runs_strict_paired_off_then_on_and_captures_structured_metrics(self) -> None:
         result = self.run_harness("alpha")
-
         self.assertEqual(result.returncode, 0, result.stderr)
-        records = [json.loads(line) for line in (self.destination / "raw.ndjson").read_text(encoding="utf-8").splitlines()]
+        records = self.records()
         self.assertEqual([(row["repetition"], row["arm"]) for row in records], [
             (1, "off"), (1, "on"), (2, "off"), (2, "on")
         ])
@@ -104,75 +133,99 @@ class LocalAtlasAbTests(unittest.TestCase):
         raw_bytes = (self.destination / "raw.ndjson").read_bytes()
         self.assertEqual(manifest["raw_sha256"], hashlib.sha256(raw_bytes).hexdigest())
         self.assertEqual(manifest["raw_count"], 4)
+        self.assertEqual(manifest["expected_raw_count"], 4)
         self.assertEqual(manifest["state"], "complete")
         self.assertEqual(manifest["tasks"], ["alpha"])
         serialized = json.dumps(manifest)
         self.assertNotIn("sensitive-fixture-value", serialized)
+        self.assertNotIn("second-sensitive-fixture-value", serialized)
         self.assertNotIn(str(self.workspace), serialized)
-        self.assertEqual(manifest["command_display"][-2:], ["--access-token", "<redacted>"])
+        self.assertEqual(
+            manifest["command_display"][-3:],
+            ["--access-token", "<redacted>", "<redacted>"],
+        )
         self.assertEqual(len(manifest["command_identity_sha256"]), 64)
+        self.assertEqual(len(manifest["model_identity_sha256"]), 64)
 
     def test_success_without_acceptance_stays_unavailable_and_malformed_is_failure(self) -> None:
-        result = self.run_harness("no-acceptance", "malformed", extra=("--repetitions", "1"))
-
+        result = self.run_harness(
+            "no-acceptance", "malformed", "nonfinite",
+            extra=("--repetitions", "1"),
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
-        records = [json.loads(line) for line in (self.destination / "raw.ndjson").read_text(encoding="utf-8").splitlines()]
+        records = self.records()
         unavailable = [row for row in records if row["task_id"] == "no-acceptance"]
         self.assertTrue(all(row["exit_code"] == 0 for row in unavailable))
         self.assertTrue(all(row["accepted_outcome"] == {"accepted": None, "state": "unavailable"} for row in unavailable))
         malformed = [row for row in records if row["task_id"] == "malformed"]
         self.assertTrue(all(row["accepted_outcome"]["accepted"] is None for row in malformed))
         self.assertTrue(all(row["error"] == {"kind": "malformed_runner_output"} for row in malformed))
+        nonfinite = [row for row in records if row["task_id"] == "nonfinite"]
+        self.assertTrue(all(row["error"] == {"kind": "malformed_runner_output"} for row in nonfinite))
 
     def test_timeout_is_captured_as_unavailable_without_promoting_acceptance(self) -> None:
-        result = self.run_harness(
-            "slow", extra=("--repetitions", "1", "--timeout", "0.01")
-        )
-
+        result = self.run_harness("slow", extra=("--repetitions", "1", "--timeout", "0.01"))
         self.assertEqual(result.returncode, 0, result.stderr)
-        records = [
-            json.loads(line)
-            for line in (self.destination / "raw.ndjson")
-            .read_text(encoding="utf-8")
-            .splitlines()
-        ]
+        records = self.records()
         self.assertEqual(len(records), 2)
         self.assertTrue(all(row["exit_code"] is None for row in records))
-        self.assertTrue(
-            all(
-                row["accepted_outcome"]
-                == {"accepted": None, "state": "unavailable"}
-                for row in records
-            )
-        )
+        self.assertTrue(all(row["accepted_outcome"] == {"accepted": None, "state": "unavailable"} for row in records))
         self.assertTrue(all(row["error"] == {"kind": "timeout"} for row in records))
 
     def test_oversized_runner_output_is_bounded_and_unavailable(self) -> None:
-        result = self.run_harness(
-            "oversized", extra=("--repetitions", "1")
-        )
-
+        result = self.run_harness("oversized", extra=("--repetitions", "1"))
         self.assertEqual(result.returncode, 0, result.stderr)
-        records = [
-            json.loads(line)
-            for line in (self.destination / "raw.ndjson")
-            .read_text(encoding="utf-8")
-            .splitlines()
-        ]
+        records = self.records()
         self.assertEqual(len(records), 2)
-        self.assertTrue(
-            all(
-                row["error"] == {"kind": "runner_output_too_large"}
-                for row in records
-            )
-        )
-        self.assertTrue(
-            all(row["accepted_outcome"]["accepted"] is None for row in records)
-        )
+        self.assertTrue(all(row["error"] == {"kind": "runner_output_too_large"} for row in records))
+        self.assertTrue(all(row["accepted_outcome"]["accepted"] is None for row in records))
+
+    def test_successful_runner_cannot_leave_a_descendant_in_an_arm(self) -> None:
+        result = self.run_harness("lingering-child", extra=("--repetitions", "1"))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        time.sleep(0.5)
+        self.assertFalse(any(path.name == "descendant-survived" for path in self.destination.rglob("*")))
+
+    def test_unexpected_interruption_retains_bound_partial_exportable_evidence(self) -> None:
+        task_document = json.loads(self.tasks.read_text(encoding="utf-8"))
+        task_document["tasks"] = [task_document["tasks"][0]]
+        self.tasks.write_text(json.dumps(task_document), encoding="utf-8")
+        successful = {
+            "accepted_outcome": {"accepted": False, "state": "rejected"},
+            "elapsed_ms": 1, "tokens": None, "tool_calls": 0,
+            "files_read": 0, "source_bytes_read": 0, "atlas_route": None,
+            "atlas_runtime_ms": None, "context_expansion": None,
+        }
+        with mock.patch.object(
+            harness, "_run",
+            side_effect=[(0, harness._capture(successful, 0)), RuntimeError("simulated interruption")],
+        ):
+            with self.assertRaisesRegex(RuntimeError, "simulated interruption"):
+                harness.campaign(
+                    self.workspace, self.tasks, self.adapter, self.destination,
+                    ["alpha"], 1, 1, 5,
+                )
+
+        raw = (self.destination / "raw.ndjson").read_bytes()
+        manifest = json.loads((self.destination / "harness-manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(manifest["state"], "partial")
+        self.assertEqual(manifest["raw_count"], 1)
+        self.assertEqual(manifest["expected_raw_count"], 2)
+        self.assertEqual(manifest["raw_sha256"], hashlib.sha256(raw).hexdigest())
+        bundle = self.workspace / "partial-bundle"
+        exported = subprocess.run([
+            sys.executable, str(EXPORTER), "--workspace", str(self.workspace),
+            "--input", str(self.destination / "raw.ndjson"),
+            "--destination", str(bundle),
+        ], capture_output=True, text=True, check=False)
+        self.assertEqual(exported.returncode, 0, exported.stderr)
+        summary = json.loads((bundle / "summary.json").read_text(encoding="utf-8"))
+        self.assertEqual(summary["state"], "partial")
+        self.assertEqual(summary["counts"]["records"], 1)
 
     def test_bounds_explicit_selection_existing_destination_and_escape_fail_closed(self) -> None:
         cases = [
-            ("no-task", [] , ()),
+            ("no-task", [], ()),
             ("unknown-task", ["absent"], ()),
             ("repetitions", ["alpha"], ("--repetitions", "11")),
             ("max-tasks", ["alpha", "no-acceptance"], ("--max-tasks", "1")),
@@ -193,12 +246,10 @@ class LocalAtlasAbTests(unittest.TestCase):
         campaign = self.run_harness("alpha", extra=("--repetitions", "1"))
         self.assertEqual(campaign.returncode, 0, campaign.stderr)
         bundle = self.workspace / "bundle"
-
         exported = subprocess.run([
             sys.executable, str(EXPORTER), "--workspace", str(self.workspace),
             "--input", str(self.destination / "raw.ndjson"), "--destination", str(bundle),
         ], capture_output=True, text=True, check=False)
-
         self.assertEqual(exported.returncode, 0, exported.stderr)
         summary = json.loads((bundle / "summary.json").read_text(encoding="utf-8"))
         self.assertEqual(summary["counts"]["records"], 2)

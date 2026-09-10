@@ -89,6 +89,32 @@ class LocalArtifactCleanupTests(unittest.TestCase):
         self.assertTrue(payload.exists())
         self.assertTrue(link.exists())
 
+    def test_candidate_ancestor_junction_is_unknown_and_never_traversed(self) -> None:
+        outside = Path(self.temporary.name) / "outside-target"
+        (outside / "debug").mkdir(parents=True)
+        payload = outside / "debug" / "keep.bin"
+        payload.write_bytes(b"outside")
+        target = self.workspace / "target"
+        try:
+            target.symlink_to(outside, target_is_directory=True)
+        except OSError:
+            junction = subprocess.run(
+                ["cmd", "/c", "mklink", "/J", str(target), str(outside)],
+                capture_output=True,
+                check=False,
+            )
+            if junction.returncode:
+                self.skipTest("directory links and junctions are unavailable")
+
+        result, report = self.run_cleanup("--apply")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(report["proposed"], [])
+        self.assertEqual(
+            [item["path"] for item in report["unknown"]], ["target"]
+        )
+        self.assertTrue(payload.exists())
+
     def test_explicit_scratch_name_cannot_reclassify_workspace_content(self) -> None:
         source = self.workspace / "scripts" / "keep.py"
         source.parent.mkdir()
@@ -117,6 +143,18 @@ class LocalArtifactCleanupTests(unittest.TestCase):
         (preservation.parent / "accepted-outcome.json").write_text("{}\n", encoding="utf-8")
         disposable.write_bytes(b"delete")
         unknown.write_bytes(b"unknown")
+        benchmark_summary = (
+            self.workspace / "_generated_fixture" / "capacity-summary-v1.json"
+        )
+        run_attestation = (
+            self.workspace / "_generated_fixture" / "run-attestation-42.json"
+        )
+        benchmark_result = (
+            self.workspace / "_generated_fixture" / "benchmark-result.json"
+        )
+        benchmark_summary.write_text("{}\n", encoding="utf-8")
+        run_attestation.write_text("{}\n", encoding="utf-8")
+        benchmark_result.write_text("{}\n", encoding="utf-8")
 
         result, report = self.run_cleanup("--apply")
 
@@ -125,9 +163,12 @@ class LocalArtifactCleanupTests(unittest.TestCase):
             "_generated_fixture/temporary.bin"
         ])
         self.assertEqual([item["path"] for item in report["protected"]], [
+            "_generated_fixture/benchmark-result.json",
+            "_generated_fixture/capacity-summary-v1.json",
             "_generated_fixture/raw-observations.ndjson",
             "_generated_fixture/retained/.atlas-preserve",
             "_generated_fixture/retained/accepted-outcome.json",
+            "_generated_fixture/run-attestation-42.json",
         ])
         self.assertEqual([item["path"] for item in report["unknown"]], [
             "target/custom-profile"
@@ -135,6 +176,9 @@ class LocalArtifactCleanupTests(unittest.TestCase):
         self.assertTrue(evidence.exists())
         self.assertTrue(preservation.parent.exists())
         self.assertTrue(unknown.exists())
+        self.assertTrue(benchmark_summary.exists())
+        self.assertTrue(run_attestation.exists())
+        self.assertTrue(benchmark_result.exists())
 
 
 if __name__ == "__main__":

@@ -86,6 +86,76 @@ class BenchmarkEvidenceExportTests(unittest.TestCase):
         for path in self.destination.iterdir():
             self.assertTrue(path.read_bytes().endswith(b"\n"))
 
+    def test_harness_identity_sidecar_mismatch_is_rejected_before_destination(self) -> None:
+        records = self.write_records()
+        (self.workspace / "harness-manifest.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": "1.0.0",
+                    "state": "complete",
+                    "raw_count": len(records),
+                    "expected_raw_count": len(records),
+                    "raw_sha256": "0" * 64,
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        result = self.run_export()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.destination.exists())
+
+    def test_real_capacity_raw_and_summary_drive_counts_identity_and_state(self) -> None:
+        source = self.workspace / "capacity-raw-observations-v1.ndjson"
+        record = {
+            "schema_version": "1.0.0",
+            "kind": "capacity-raw-observation",
+            "outcome": "required_provider_failure",
+            "correctness": False,
+            "accepted_outcome": None,
+            "preparation_failure": "required provider failed",
+            "repetition": 1,
+        }
+        raw = (json.dumps(record, sort_keys=True) + "\n").encode()
+        source.write_bytes(raw)
+        summary_source = self.workspace / "capacity-summary-v1.json"
+        summary_source.write_text(
+            json.dumps(
+                {
+                    "schema_version": "1.0.0",
+                    "kind": "capacity-evidence-summary",
+                    "raw_sha256": hashlib.sha256(raw).hexdigest(),
+                    "attempted_records": 1,
+                    "missing_records": 0,
+                    "duplicate_records": 0,
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        result = self.run_export(source)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        manifest = json.loads(
+            (self.destination / "manifest.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(manifest["state"], "complete")
+        self.assertEqual(manifest["counts"], {
+            "accepted": 0,
+            "failed": 1,
+            "records": 1,
+            "rejected": 1,
+            "unavailable": 0,
+        })
+        self.assertEqual(
+            manifest["identity"]["name"], "capacity-summary-v1.json"
+        )
+        self.assertEqual(
+            manifest["identity"]["sha256"],
+            hashlib.sha256(summary_source.read_bytes()).hexdigest(),
+        )
+
     def test_json_wrapper_binds_partial_state_and_sanitizes_environment(self) -> None:
         wrapper = {
             "schema_version": "1.0.0", "state": "partial", "raw_count": 1,
@@ -119,6 +189,9 @@ class BenchmarkEvidenceExportTests(unittest.TestCase):
         malformed = self.workspace / "malformed.ndjson"
         malformed.write_text('{"ok":true}\nnot-json\n', encoding="utf-8")
         cases.append(("malformed", malformed, self.workspace / "bad-one"))
+        nonfinite = self.workspace / "nonfinite.ndjson"
+        nonfinite.write_text('{"metric":NaN}\n', encoding="utf-8")
+        cases.append(("nonfinite", nonfinite, self.workspace / "bad-nonfinite"))
         mismatch = self.workspace / "mismatch.json"
         mismatch.write_text(json.dumps({"state": "complete", "raw_count": 2, "records": [{}]}), encoding="utf-8")
         cases.append(("mismatch", mismatch, self.workspace / "bad-two"))

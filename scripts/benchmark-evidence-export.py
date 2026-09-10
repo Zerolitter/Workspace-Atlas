@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
 import stat
 import sys
 from typing import Any
@@ -28,6 +29,11 @@ CSV_COLUMNS = (
     "files_read", "source_bytes_read", "atlas_route", "atlas_runtime_ms",
     "context_expansion", "error_kind",
 )
+HOME_OR_ABSOLUTE = re.compile(
+    r"(?:^[A-Za-z]:[\\/]|^/|^\\\\|^~|%(?:USERPROFILE|HOME)%|"
+    r"\$(?:HOME|USERPROFILE)|/(?:home|Users)/|[\\/]Users[\\/])",
+    re.IGNORECASE,
+)
 
 
 class ExportError(RuntimeError):
@@ -42,16 +48,30 @@ def _duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
         result[key] = value
     return result
 
+def _invalid_constant(value: str) -> Any:
+    raise ExportError(f"non-finite JSON number is forbidden: {value}")
+
 
 def _json_load(text: str, role: str) -> Any:
     try:
-        return json.loads(text, object_pairs_hook=_duplicates)
+        return json.loads(
+            text, object_pairs_hook=_duplicates, parse_constant=_invalid_constant
+        )
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
         raise ExportError(f"{role} is malformed JSON") from error
 
 
 def _is_reparse(metadata: os.stat_result) -> bool:
     return bool(getattr(metadata, "st_file_attributes", 0) & 0x400)
+
+
+def _identity(metadata: os.stat_result) -> tuple[int, int, int, int]:
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+    )
 
 
 def _safe_metadata(path: Path, role: str, kind: str) -> os.stat_result:
@@ -81,7 +101,7 @@ def _safe_ancestors(path: Path, workspace: Path, include_path: bool) -> None:
     current = path if include_path else path.parent
     while True:
         if current.exists() or current.is_symlink():
-            _safe_metadata(current, "path component", "directory" if current != path or not include_path else "directory")
+            _safe_metadata(current, "path component", "directory")
         if current == workspace:
             break
         if current.parent == current:
@@ -89,14 +109,33 @@ def _safe_ancestors(path: Path, workspace: Path, include_path: bool) -> None:
         current = current.parent
 
 
-def _read_input(path: Path) -> tuple[bytes, list[dict[str, Any]], str, str]:
-    metadata = _safe_metadata(path, "input", "file")
-    if metadata.st_size > MAX_INPUT_BYTES:
-        raise ExportError("input exceeds byte bound")
+def _read_bounded_file(path: Path, maximum: int, role: str) -> bytes:
+    before = _safe_metadata(path, role, "file")
+    if before.st_size > maximum:
+        raise ExportError(f"{role} exceeds byte bound")
+    expected = _identity(before)
     try:
-        raw_bytes = path.read_bytes()
+        with path.open("rb") as source:
+            opened = os.fstat(source.fileno())
+            if _identity(opened) != expected or not stat.S_ISREG(opened.st_mode):
+                raise ExportError(f"{role} changed before read")
+            data = source.read(maximum + 1)
+            if len(data) > maximum:
+                raise ExportError(f"{role} exceeds byte bound")
+            if _identity(os.fstat(source.fileno())) != expected:
+                raise ExportError(f"{role} changed while read")
+    except OSError as error:
+        raise ExportError(f"{role} is unreadable") from error
+    if _identity(_safe_metadata(path, role, "file")) != expected:
+        raise ExportError(f"{role} changed while read")
+    return data
+
+
+def _read_input(path: Path) -> tuple[bytes, list[dict[str, Any]], str, str]:
+    raw_bytes = _read_bounded_file(path, MAX_INPUT_BYTES, "input")
+    try:
         text = raw_bytes.decode("utf-8")
-    except (OSError, UnicodeDecodeError) as error:
+    except UnicodeDecodeError as error:
         raise ExportError("input is unreadable UTF-8") from error
     state = "complete"
     if path.suffix.lower() == ".ndjson":
@@ -131,6 +170,9 @@ def _read_input(path: Path) -> tuple[bytes, list[dict[str, Any]], str, str]:
             raise ExportError("input state must be partial or complete")
         if not isinstance(records, list) or len(records) > MAX_RECORDS or not all(isinstance(row, dict) for row in records):
             raise ExportError("records must be a bounded array of objects")
+        for record in records:
+            if len(json.dumps(record, ensure_ascii=False).encode("utf-8")) > MAX_RECORD_BYTES:
+                raise ExportError("JSON record exceeds byte bound")
         input_format = "json"
     return raw_bytes, records, input_format, state
 
@@ -143,11 +185,87 @@ def _hash(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def _identity_sidecar(
+    source: Path,
+    workspace: Path,
+    raw_bytes: bytes,
+    record_count: int,
+) -> tuple[str | None, dict[str, Any] | None]:
+    sidecar: Path | None = None
+    sidecar_kind = ""
+    if source.name == "raw.ndjson":
+        candidate = source.with_name("harness-manifest.json")
+        if candidate.exists() or candidate.is_symlink():
+            sidecar, sidecar_kind = candidate, "harness"
+    elif source.name in (
+        "capacity-raw-observations-v1.ndjson",
+        "test-capacity-raw-observations-v1.ndjson",
+    ):
+        name = (
+            "capacity-summary-v1.json"
+            if source.name.startswith("capacity-")
+            else "test-capacity-summary-v1.json"
+        )
+        candidate = source.with_name(name)
+        if candidate.exists() or candidate.is_symlink():
+            sidecar, sidecar_kind = candidate, "capacity"
+        else:
+            return "partial", None
+    if sidecar is None:
+        return None, None
+    _safe_ancestors(sidecar, workspace, False)
+    sidecar_bytes = _read_bounded_file(sidecar, MAX_DOCUMENT_BYTES, "identity sidecar")
+    try:
+        value = _json_load(sidecar_bytes.decode("utf-8"), "identity sidecar")
+    except UnicodeDecodeError as error:
+        raise ExportError("identity sidecar is unreadable UTF-8") from error
+    if not isinstance(value, dict) or value.get("schema_version") != SCHEMA_VERSION:
+        raise ExportError("identity sidecar schema is malformed")
+    raw_sha256 = _hash(raw_bytes)
+    if value.get("raw_sha256") != raw_sha256:
+        raise ExportError("identity sidecar raw hash mismatch")
+    if sidecar_kind == "harness":
+        observed = value.get("raw_count")
+        expected = value.get("expected_raw_count", observed)
+        state = value.get("state")
+        if (
+            not isinstance(observed, int)
+            or isinstance(observed, bool)
+            or observed != record_count
+            or not isinstance(expected, int)
+            or isinstance(expected, bool)
+            or observed > expected
+            or state not in ("partial", "complete")
+            or (state == "complete" and observed != expected)
+        ):
+            raise ExportError("harness identity count or state mismatch")
+    else:
+        attempted = value.get("attempted_records")
+        missing = value.get("missing_records")
+        duplicate = value.get("duplicate_records")
+        if (
+            value.get("kind") != "capacity-evidence-summary"
+            or not all(isinstance(item, int) and not isinstance(item, bool) and item >= 0 for item in (attempted, missing, duplicate))
+            or attempted != record_count
+        ):
+            raise ExportError("capacity summary count or schema mismatch")
+        state = "complete" if missing == 0 and duplicate == 0 else "partial"
+    return state, {
+        "bytes": len(sidecar_bytes),
+        "kind": sidecar_kind,
+        "name": sidecar.name,
+        "sha256": _hash(sidecar_bytes),
+    }
+
+
 def _accepted(record: dict[str, Any]) -> tuple[bool | None, str]:
     outcome = record.get("accepted_outcome")
     if isinstance(outcome, dict):
         accepted = outcome.get("accepted")
         state = outcome.get("state", "unavailable" if accepted is None else "accepted" if accepted else "rejected")
+    elif record.get("kind") in ("capacity-raw-observation", "test-capacity-raw-observation") and isinstance(record.get("correctness"), bool):
+        accepted = record["correctness"]
+        state = str(record.get("outcome", "unavailable"))
     elif isinstance(record.get("accepted"), bool):
         accepted = record["accepted"]
         state = "accepted" if accepted else "rejected"
@@ -159,6 +277,20 @@ def _accepted(record: dict[str, Any]) -> tuple[bool | None, str]:
     return accepted, str(state)
 
 
+def _record_failed(record: dict[str, Any]) -> bool:
+    exit_code = record.get("exit_code")
+    capacity = record.get("kind") in (
+        "capacity-raw-observation", "test-capacity-raw-observation"
+    )
+    return bool(
+        record.get("error") is not None
+        or record.get("failure") is not None
+        or record.get("preparation_failure") is not None
+        or (isinstance(exit_code, int) and not isinstance(exit_code, bool) and exit_code != 0)
+        or (capacity and record.get("outcome") != "success")
+    )
+
+
 def _counts(records: list[dict[str, Any]]) -> dict[str, int]:
     accepted = rejected = unavailable = failed = 0
     for record in records:
@@ -166,8 +298,7 @@ def _counts(records: list[dict[str, Any]]) -> dict[str, int]:
         accepted += outcome is True
         rejected += outcome is False
         unavailable += outcome is None
-        exit_code = record.get("exit_code")
-        failed += bool(record.get("error") is not None or record.get("failure") is not None or (isinstance(exit_code, int) and exit_code != 0))
+        failed += _record_failed(record)
     return {"accepted": accepted, "failed": failed, "records": len(records), "rejected": rejected, "unavailable": unavailable}
 
 
@@ -183,45 +314,73 @@ def _cell(value: Any) -> str:
     return str(value)
 
 
+def _sort_value(value: Any) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
 def _csv_bytes(records: list[dict[str, Any]]) -> bytes:
     output = io.StringIO(newline="")
     writer = csv.DictWriter(output, fieldnames=CSV_COLUMNS, lineterminator="\n")
     writer.writeheader()
     order = {"off": 0, "on": 1}
-    for record in sorted(records, key=lambda row: (str(row.get("task_id", "")), int(row.get("repetition", 0) or 0), order.get(str(row.get("arm", "")), 2), json.dumps(row, sort_keys=True))):
+    for record in sorted(records, key=lambda row: (
+        str(row.get("task_id", row.get("dataset_name", ""))),
+        _sort_value(row.get("repetition")),
+        order.get(str(row.get("arm", "")), 2),
+        _sort_value(row),
+    )):
         accepted, accepted_state = _accepted(record)
         tokens = record.get("tokens") if isinstance(record.get("tokens"), dict) else {}
         error = record.get("error") if isinstance(record.get("error"), dict) else {}
+        context = record.get("context_expansion")
+        if context is None and record.get("kind") in ("capacity-raw-observation", "test-capacity-raw-observation"):
+            context = {
+                "records": record.get("compiler_selected_records"),
+                "source_bytes": record.get("compiler_selected_source_bytes"),
+                "estimated_tokens": record.get("compiler_selected_estimated_tokens"),
+            }
         row = {
-            "task_id": record.get("task_id"), "repetition": record.get("repetition"),
-            "arm": record.get("arm"), "accepted": accepted, "accepted_state": accepted_state,
-            "exit_code": record.get("exit_code"), "elapsed_ms": record.get("elapsed_ms"),
+            "task_id": record.get("task_id", record.get("dataset_name")),
+            "repetition": record.get("repetition"), "arm": record.get("arm"),
+            "accepted": accepted, "accepted_state": accepted_state,
+            "exit_code": record.get("exit_code"),
+            "elapsed_ms": record.get("elapsed_ms", record.get("wall_duration_ms")),
             "tokens_input": tokens.get("input"), "tokens_output": tokens.get("output"),
             "tokens_total": tokens.get("total"), "tool_calls": record.get("tool_calls"),
-            "files_read": record.get("files_read"), "source_bytes_read": record.get("source_bytes_read"),
-            "atlas_route": record.get("atlas_route"), "atlas_runtime_ms": record.get("atlas_runtime_ms"),
-            "context_expansion": record.get("context_expansion"), "error_kind": error.get("kind"),
+            "files_read": record.get("files_read"),
+            "source_bytes_read": record.get("source_bytes_read", record.get("source_bytes")),
+            "atlas_route": record.get("atlas_route"),
+            "atlas_runtime_ms": record.get("atlas_runtime_ms", record.get("atlas_runtime_duration_ms")),
+            "context_expansion": context, "error_kind": error.get("kind"),
         }
         writer.writerow({key: _cell(value) for key, value in row.items()})
     return output.getvalue().encode("utf-8")
 
 
+def _safe_environment_value(value: Any) -> bool:
+    if isinstance(value, bool) or isinstance(value, (int, float)):
+        return True
+    return bool(
+        isinstance(value, str)
+        and len(value.encode("utf-8")) <= 512
+        and not any(ord(character) < 32 for character in value)
+        and not HOME_OR_ABSOLUTE.search(value)
+    )
+
+
 def _environment(path: Path | None) -> dict[str, Any]:
     supplied: dict[str, Any] = {}
     if path is not None:
-        metadata = _safe_metadata(path, "environment input", "file")
-        if metadata.st_size > MAX_DOCUMENT_BYTES:
-            raise ExportError("environment input exceeds byte bound")
+        data = _read_bounded_file(path, MAX_DOCUMENT_BYTES, "environment input")
         try:
-            text = path.read_bytes().decode("utf-8")
-        except (OSError, UnicodeDecodeError) as error:
+            value = _json_load(data.decode("utf-8"), "environment")
+        except UnicodeDecodeError as error:
             raise ExportError("environment input is unreadable UTF-8") from error
-        value = _json_load(text, "environment")
         if not isinstance(value, dict):
             raise ExportError("environment input must be an object")
         for key in sorted(ENVIRONMENT_KEYS):
             item = value.get(key)
-            if isinstance(item, (str, int, float, bool)) and not (isinstance(item, str) and ("\\" in item or ":/" in item or item.startswith("/"))):
+            if _safe_environment_value(item):
                 supplied[key] = item
     return {
         "allowlisted": supplied,
@@ -232,6 +391,22 @@ def _environment(path: Path | None) -> dict[str, Any]:
         },
         "schema_version": SCHEMA_VERSION,
     }
+
+
+def _directory_guard(path: Path) -> tuple[int, int]:
+    metadata = _safe_metadata(path, "destination", "directory")
+    return metadata.st_dev, metadata.st_ino
+
+
+def _write_exclusive(path: Path, data: bytes) -> tuple[int, int, int, int]:
+    try:
+        with path.open("xb") as output:
+            output.write(data)
+            output.flush()
+            os.fsync(output.fileno())
+            return _identity(os.fstat(output.fileno()))
+    except FileExistsError as error:
+        raise ExportError(f"bundle output already exists: {path.name}") from error
 
 
 def export(workspace: Path, source: Path, destination: Path, environment_path: Path | None) -> dict[str, Any]:
@@ -248,6 +423,11 @@ def export(workspace: Path, source: Path, destination: Path, environment_path: P
         _safe_ancestors(environment_path, workspace, False)
         _safe_metadata(environment_path, "environment input", "file")
     raw_input, records, input_format, state = _read_input(source)
+    sidecar_state, identity = _identity_sidecar(
+        source, workspace, raw_input, len(records)
+    )
+    if sidecar_state is not None:
+        state = sidecar_state
     environment = _environment(environment_path)
     counts = _counts(records)
     schemas = sorted({str(row["schema_version"]) for row in records if isinstance(row.get("schema_version"), str)})
@@ -257,7 +437,7 @@ def export(workspace: Path, source: Path, destination: Path, environment_path: P
         "summary.json": _canonical_bytes({"counts": counts, "schema_version": SCHEMA_VERSION, "state": state}),
         "results.csv": _csv_bytes(records),
     }
-    manifest = {
+    manifest: dict[str, Any] = {
         "bundle_schema_version": SCHEMA_VERSION,
         "counts": counts,
         "files": {name: {"bytes": len(data), "sha256": _hash(data)} for name, data in sorted(payloads.items())},
@@ -265,15 +445,38 @@ def export(workspace: Path, source: Path, destination: Path, environment_path: P
         "source_schema_versions": schemas,
         "state": state,
     }
+    if identity is not None:
+        manifest["identity"] = identity
+    manifest_bytes = _canonical_bytes(manifest)
+
+    parent_guard = _directory_guard(destination.parent)
     destination.mkdir()
+    if _directory_guard(destination.parent) != parent_guard:
+        raise ExportError("destination parent changed during creation")
+    destination_guard = _directory_guard(destination)
+    created: dict[Path, tuple[int, int, int, int]] = {}
     try:
         for name, data in payloads.items():
-            (destination / name).write_bytes(data)
-        (destination / "manifest.json").write_bytes(_canonical_bytes(manifest))
+            if _directory_guard(destination) != destination_guard:
+                raise ExportError("destination changed during bundle creation")
+            child = destination / name
+            created[child] = _write_exclusive(child, data)
+        if _directory_guard(destination) != destination_guard:
+            raise ExportError("destination changed during bundle creation")
+        manifest_path = destination / "manifest.json"
+        created[manifest_path] = _write_exclusive(manifest_path, manifest_bytes)
+        if _directory_guard(destination) != destination_guard:
+            raise ExportError("destination changed during bundle creation")
     except BaseException:
-        for child in destination.iterdir():
-            child.unlink()
-        destination.rmdir()
+        try:
+            if _directory_guard(destination) == destination_guard:
+                for child, expected in reversed(tuple(created.items())):
+                    metadata = _safe_metadata(child, "partial bundle output", "file")
+                    if _identity(metadata) == expected:
+                        child.unlink()
+                destination.rmdir()
+        except (OSError, ExportError):
+            pass
         raise
     return manifest
 

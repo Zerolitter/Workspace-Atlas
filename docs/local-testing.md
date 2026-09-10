@@ -44,11 +44,13 @@ create an operator-local adapter JSON:
 }
 ```
 
-Do not put credentials in the adapter command. The harness stores an exact SHA-256
-identity for the command, adapter, and model, but only a sanitized command display.
-It invokes the command directly, never through a shell. For each explicitly selected
-task and repetition it runs `off` and then `on`, with a separate arm directory and
-`ATLAS_ENABLED` set to `0` or `1` respectively:
+Do not put credentials in the adapter command, model name, or task IDs. The harness
+stores exact SHA-256 identities for the command, model, adapter, and task content,
+while retaining only sanitized command/model displays. It invokes the command
+directly, never through a shell, and contains the process tree for both successful
+and timed-out runs. For each explicitly selected task and repetition it runs `off`
+and then `on`, with a separate arm directory and `ATLAS_ENABLED` set to `0` or `1`
+respectively:
 
 ```sh
 python scripts/local-atlas-ab.py --workspace . \
@@ -70,11 +72,13 @@ fields are:
 - `atlas_route`, `atlas_runtime_ms`, and `context_expansion`
 
 Missing measurements remain JSON `null`; they are never inferred. Process exit zero
-does not imply acceptance. Timeout, non-zero exit, oversized output, and malformed
-output remain explicit unavailable/failure observations. The campaign writes
-`raw.ndjson`, `harness-manifest.json`, and a sanitized `result.json` in each isolated
-arm directory. It makes no network or model selection decision; the operator supplies
-the local command.
+does not imply acceptance. Timeout, non-zero exit, oversized output, non-finite
+numbers, and malformed output remain explicit unavailable/failure observations.
+The campaign incrementally binds `raw.ndjson` to `harness-manifest.json`; an
+unexpected interruption leaves the completed observations marked `partial` rather
+than promoting them to a complete run. Each isolated arm also contains a sanitized
+`result.json`. The harness makes no network or model selection decision; the
+operator supplies the local command.
 
 ## Export a portable evidence bundle
 
@@ -87,11 +91,13 @@ python scripts/benchmark-evidence-export.py --workspace . \
 ```
 
 The destination must be new, workspace-contained, and free of link/reparse ambiguity.
-The exporter rejects malformed input, duplicate JSON fields, count mismatches, existing
-destinations, and containment escapes. It preserves failures, nulls, and unknown fields
-in the raw payload. `environment.json` contains only fixed host fields and an optional
-sanitized allowlist from `--environment`; it never dumps the environment or emits home
-paths.
+The exporter rejects malformed input, duplicate JSON fields, non-finite numbers,
+count/hash/state mismatches, existing destinations, and containment escapes. For
+harness raw output it validates the adjacent harness manifest; for Atlas capacity
+raw output it validates the adjacent capacity summary when present and otherwise
+marks the input partial. It preserves failures, nulls, and unknown fields in the raw
+payload. `environment.json` contains only fixed host fields and an optional sanitized
+allowlist from `--environment`; it never dumps the environment or emits home paths.
 
 Every bundle contains exactly:
 
