@@ -1848,7 +1848,7 @@ fn duration_micros(duration: Duration) -> u64 {
 }
 
 fn elapsed_micros(started: Instant) -> u64 {
-    duration_micros(started.elapsed())
+    duration_micros(started.elapsed()).max(1)
 }
 
 fn route_attempt(
