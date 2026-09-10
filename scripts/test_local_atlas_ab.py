@@ -117,6 +117,9 @@ class LocalAtlasAbTests(unittest.TestCase):
         result = self.run_harness("alpha")
         self.assertEqual(result.returncode, 0, result.stderr)
         records = self.records()
+        self.assertTrue(
+            all(record["schema_version"] == "1.0.0" for record in records)
+        )
         self.assertEqual([(row["repetition"], row["arm"]) for row in records], [
             (1, "off"), (1, "on"), (2, "off"), (2, "on")
         ])

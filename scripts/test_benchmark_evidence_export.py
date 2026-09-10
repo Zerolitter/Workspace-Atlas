@@ -315,6 +315,30 @@ class BenchmarkEvidenceExportTests(unittest.TestCase):
                 "harness_pairing",
             ]),
         )
+        self.assertNotIn("identity", manifest)
+
+    def test_generic_raw_ndjson_is_not_misclassified_as_harness_output(
+        self,
+    ) -> None:
+        self.source.write_text(
+            json.dumps(
+                {
+                    "schema_version": "custom-observation-v1",
+                    "kind": "custom-observation",
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        result = self.run_export()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        manifest = json.loads(
+            (self.destination / "manifest.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(manifest["state"], "complete")
+        self.assertEqual(manifest["missing_provenance"], [])
 
     def test_csv_record_json_preserves_failure_unknown_and_null_vs_missing(
         self,
@@ -366,6 +390,7 @@ class BenchmarkEvidenceExportTests(unittest.TestCase):
         )
         self.assertIsNone(json.loads(rows[0]["record_json"])["known_null"])
         self.assertNotIn("known_null", json.loads(rows[1]["record_json"]))
+        self.assertEqual(rows[0]["error_kind"], "runner_exit")
 
 
 if __name__ == "__main__":

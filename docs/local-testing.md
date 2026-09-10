@@ -23,6 +23,10 @@ when explicitly supplied as a workspace-relative path:
 py -3 scripts/local-artifact-cleanup.py --workspace . --benchmark-scratch .local-atlas-scratch --apply
 ```
 
+Apply uses identity-bound deletion on Windows. On platforms where the exact
+validated directory entry cannot be bound through deletion, apply refuses that
+entry and reports it as `unknown` rather than weakening the safety guarantee.
+
 The tool never runs `cargo clean` or removes the whole `target` directory. Links,
 reparse points, containment escapes, unclassified `target` content, raw observations,
 manifests, accepted-outcome records, evidence, portable bundles, results CSV files,

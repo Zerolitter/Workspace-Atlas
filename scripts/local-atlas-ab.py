@@ -581,6 +581,7 @@ def campaign(workspace: Path, tasks_path: Path, adapter_path: Path, destination:
                         "model_identity_sha256": model_identity,
                         "repetition": repetition,
                         "runner_wall_ms": runner_wall_ms,
+                        "schema_version": SCHEMA_VERSION,
                         "task_id": task["id"], "task_identity_sha256": task_identity,
                         "timeout_seconds": timeout,
                         **captured,

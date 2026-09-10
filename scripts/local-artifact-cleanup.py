@@ -292,7 +292,7 @@ def _safe_unlink_identity_bound(
     path: Path,
     workspace: Path,
     expected: tuple[int, int, int, int],
-) -> None:
+) -> bool:
     _check_identity_chain(path, workspace)
     if os.name != "nt":
         raise AuditError("identity-bound deletion is unavailable on this platform")
@@ -308,7 +308,7 @@ def _safe_unlink_identity_bound(
     if handle == wintypes.HANDLE(-1).value:
         error = ctypes.get_last_error()
         if error in (2, 3):
-            return
+            return False
         raise AuditError("candidate could not be opened for identity-bound deletion")
     fd = -1
     try:
@@ -363,6 +363,15 @@ def _safe_unlink_identity_bound(
             os.close(fd)
         elif handle:
             _kernel32.CloseHandle(handle)
+    try:
+        _metadata(path)
+    except FileNotFoundError:
+        return True
+    except OSError as error:
+        raise AuditError(
+            "candidate deletion could not be verified"
+        ) from error
+    raise AuditError("candidate path changed after deletion")
 
 
 def audit(workspace: Path, scratches: list[str], apply: bool) -> dict[str, object]:
@@ -429,14 +438,27 @@ def audit(workspace: Path, scratches: list[str], apply: bool) -> dict[str, objec
         for item in proposed:
             path = workspace / str(item["path"])
             try:
-                _safe_unlink_identity_bound(
+                deleted_entry = _safe_unlink_identity_bound(
                     path, workspace, identities[str(item["path"])]
                 )
-                deleted.append(item)
+                if deleted_entry:
+                    deleted.append(item)
+                else:
+                    unknown.append(_item(
+                        str(item["path"]),
+                        "unknown",
+                        0,
+                        "candidate_missing_before_deletion",
+                    ))
             except FileNotFoundError:
                 continue
             except (OSError, AuditError) as error:
-                reason = "candidate_changed_before_deletion" if "candidate" in str(error) else "delete_failed"
+                if "changed after deletion" in str(error):
+                    reason = "candidate_changed_after_deletion"
+                elif "candidate" in str(error):
+                    reason = "candidate_changed_before_deletion"
+                else:
+                    reason = "delete_failed"
                 unknown.append(_item(
                     str(item["path"]), "unknown", 0, reason,
                 ))

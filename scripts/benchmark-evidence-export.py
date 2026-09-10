@@ -200,29 +200,31 @@ def _identity_sidecar(
     source: Path,
     workspace: Path,
     raw_bytes: bytes,
-    record_count: int,
+    records: list[dict[str, Any]],
 ) -> tuple[str | None, dict[str, Any] | None]:
     sidecar: Path | None = None
     sidecar_kind = ""
-    raw_shape = False
-    capacity_shape = False
+    record_count = len(records)
     if source.name == "raw.ndjson":
-        raw_shape = True
         candidate = source.with_name("harness-manifest.json")
         if candidate.exists() or candidate.is_symlink():
             sidecar, sidecar_kind = candidate, "harness"
-        else:
+        elif any(
+            record.get("kind") == "local-atlas-ab-observation"
+            for record in records
+        ):
             return "partial", {
                 "kind": "missing_harness_identity",
                 "name": "harness-manifest.json",
                 "raw_shape": "harness",
                 "record_count": record_count,
             }
+        else:
+            return None, None
     elif source.name in (
         "capacity-raw-observations-v1.ndjson",
         "test-capacity-raw-observations-v1.ndjson",
     ):
-        capacity_shape = True
         name = (
             "capacity-summary-v1.json"
             if source.name.startswith("capacity-")
@@ -239,15 +241,7 @@ def _identity_sidecar(
                 "record_count": record_count,
             }
     if sidecar is None:
-        return (
-            (None, None)
-            if not (raw_shape or capacity_shape)
-            else ("partial", {
-                "kind": "missing_identity_sidecar",
-                "raw_shape": "harness" if raw_shape else "capacity",
-                "record_count": record_count,
-            })
-        )
+        return None, None
     _safe_ancestors(sidecar, workspace, False)
     sidecar_bytes = _read_bounded_file(sidecar, MAX_DOCUMENT_BYTES, "identity sidecar")
     try:
@@ -424,7 +418,7 @@ def _csv_bytes(records: list[dict[str, Any]]) -> bytes:
             "atlas_route": _or_missing(record, "atlas_route"),
             "atlas_runtime_ms": _or_missing(record, "atlas_runtime_ms", "atlas_runtime_duration_ms"),
             "context_expansion": context,
-            "error_kind": error if error else __missing__,
+            "error_kind": _or_missing(error, "kind"),
             "record_json": _csv_record(record),
         }
         writer.writerow({key: _cell(value, missing=True) for key, value in row.items()})
@@ -490,11 +484,9 @@ def _write_exclusive(path: Path, data: bytes) -> tuple[int, int, int, int]:
 
 
 def _missing_provenance(
-    source_name: str, identity: dict[str, Any] | None, record_count: int, state: str,
+    identity: dict[str, Any] | None, record_count: int,
 ) -> list[str]:
     missing: list[str] = []
-    if identity is None:
-        missing.append("identity_sidecar")
     if isinstance(identity, dict):
         kind = identity.get("kind")
         if kind == "missing_harness_identity":
@@ -503,10 +495,6 @@ def _missing_provenance(
             missing.append("capacity_identity")
         elif kind and kind != "harness" and kind != "capacity":
             missing.append("identity_pairing")
-    if state == "partial" and source_name == "raw.ndjson":
-        if identity is None or (isinstance(identity, dict) and identity.get("name") != "harness-manifest.json"):
-            if "harness_expected_count" not in missing:
-                missing.append("harness_expected_count")
     if record_count == 0:
         missing.append("record_count")
     return sorted(set(missing))
@@ -526,7 +514,7 @@ def export(workspace: Path, source: Path, destination: Path, environment_path: P
         _safe_metadata(environment_path, "environment input", "file")
     raw_input, records, input_format, state = _read_input(source)
     sidecar_state, identity = _identity_sidecar(
-        source, workspace, raw_input, len(records)
+        source, workspace, raw_input, records
     )
     if sidecar_state is not None:
         state = sidecar_state
@@ -539,7 +527,7 @@ def export(workspace: Path, source: Path, destination: Path, environment_path: P
         "summary.json": _canonical_bytes({"counts": counts, "schema_version": SCHEMA_VERSION, "state": state}),
         "results.csv": _csv_bytes(records),
     }
-    missing_provenance = _missing_provenance(source.name, identity, len(records), state)
+    missing_provenance = _missing_provenance(identity, len(records))
     manifest: dict[str, Any] = {
         "bundle_schema_version": SCHEMA_VERSION,
         "counts": counts,
@@ -549,7 +537,10 @@ def export(workspace: Path, source: Path, destination: Path, environment_path: P
         "source_schema_versions": schemas,
         "state": state,
     }
-    if identity is not None:
+    if (
+        identity is not None
+        and not str(identity.get("kind", "")).startswith("missing_")
+    ):
         manifest["identity"] = identity
     manifest_bytes = _canonical_bytes(manifest)
 

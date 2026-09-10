@@ -264,6 +264,29 @@ class LocalArtifactCleanupTests(unittest.TestCase):
         self.assertTrue(disposable.exists())
         self.assertIn(disposable.read_bytes(), (b"original", b"replacement"))
 
+    def test_apply_does_not_report_entry_missing_at_delete_as_deleted(self) -> None:
+        disposable = self.workspace / "_generated_fixture" / "temporary.bin"
+        disposable.parent.mkdir(parents=True)
+        disposable.write_bytes(b"temporary")
+
+        with mock.patch.object(
+            cleanup_module,
+            "_safe_unlink_identity_bound",
+            return_value=False,
+        ):
+            report = cleanup_module.audit(self.workspace, [], apply=True)
+
+        self.assertEqual(report["deleted"], [])
+        self.assertTrue(
+            any(
+                item["path"] == "_generated_fixture/temporary.bin"
+                and item.get("reason") == "candidate_missing_before_deletion"
+                for item in report["unknown"]
+            ),
+            msg=repr(report),
+        )
+        self.assertTrue(disposable.exists())
+
 
 if __name__ == "__main__":
     unittest.main()
