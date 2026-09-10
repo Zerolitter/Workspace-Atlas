@@ -2957,9 +2957,6 @@ fn open_legacy_catalogue_read_only(
     })?;
     (&mut main_file).take(100).read_to_end(&mut snapshot)?;
     let uses_wal = validate_legacy_header(&snapshot, main_state.len, path)?;
-    if !uses_wal {
-        probe_legacy_sqlite_lock(path)?;
-    }
     if main_state.len > LEGACY_DISCOVERY_MAX_BYTES {
         return Err(AtlasError::Other(format!(
             "legacy catalogue {} is {} bytes, exceeding the legacy discovery ceiling of {} bytes",
@@ -2967,6 +2964,9 @@ fn open_legacy_catalogue_read_only(
             main_state.len,
             LEGACY_DISCOVERY_MAX_BYTES
         )));
+    }
+    if !uses_wal {
+        probe_legacy_sqlite_lock(path)?;
     }
     let snapshot_capacity = usize::try_from(main_state.len).map_err(|_| {
         AtlasError::Other(format!(
