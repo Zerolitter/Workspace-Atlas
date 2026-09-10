@@ -2802,6 +2802,7 @@ fn compact_and_unregister_use_exact_confirmations_without_touching_source() {
     assert_eq!(std::fs::read(&source).unwrap(), source_before);
 
     let app_data = tempfile::tempdir().unwrap();
+    let app_data_root = app_data.path().canonicalize().unwrap();
     let unregister_workspace = tempfile::tempdir().unwrap();
     let unregister_root = unregister_workspace.path().canonicalize().unwrap();
     let unregister_root = unregister_root.to_str().unwrap();
@@ -2810,7 +2811,7 @@ fn compact_and_unregister_use_exact_confirmations_without_touching_source() {
     let unregister_source_before = std::fs::read(&unregister_source).unwrap();
     let initialized = Command::cargo_bin("atlas")
         .unwrap()
-        .env("LOCALAPPDATA", app_data.path())
+        .env("LOCALAPPDATA", &app_data_root)
         .args(["init", unregister_root])
         .output()
         .unwrap();
@@ -2818,14 +2819,14 @@ fn compact_and_unregister_use_exact_confirmations_without_touching_source() {
     let unregister_catalogue = initialized["catalogue_path"].as_str().unwrap().to_string();
     let reconciled = Command::cargo_bin("atlas")
         .unwrap()
-        .env("LOCALAPPDATA", app_data.path())
+        .env("LOCALAPPDATA", &app_data_root)
         .args(["reconcile", unregister_root])
         .output()
         .unwrap();
     assert_cli_success(&reconciled);
     let preview = Command::cargo_bin("atlas")
         .unwrap()
-        .env("LOCALAPPDATA", app_data.path())
+        .env("LOCALAPPDATA", &app_data_root)
         .args(["unregister", unregister_root, "--dry-run", "--limit", "1"])
         .output()
         .unwrap();
@@ -2835,7 +2836,7 @@ fn compact_and_unregister_use_exact_confirmations_without_touching_source() {
     assert!(cursor.len() <= MAX_APPLICATION_CURSOR_BYTES);
     let continued = Command::cargo_bin("atlas")
         .unwrap()
-        .env("LOCALAPPDATA", app_data.path())
+        .env("LOCALAPPDATA", &app_data_root)
         .args([
             "unregister",
             unregister_root,
@@ -2857,7 +2858,7 @@ fn compact_and_unregister_use_exact_confirmations_without_touching_source() {
     });
     let forged = Command::cargo_bin("atlas")
         .unwrap()
-        .env("LOCALAPPDATA", app_data.path())
+        .env("LOCALAPPDATA", &app_data_root)
         .args([
             "unregister",
             unregister_root,
@@ -2876,7 +2877,7 @@ fn compact_and_unregister_use_exact_confirmations_without_touching_source() {
     let tampered = String::from_utf8(tampered).unwrap();
     let rejected = Command::cargo_bin("atlas")
         .unwrap()
-        .env("LOCALAPPDATA", app_data.path())
+        .env("LOCALAPPDATA", &app_data_root)
         .args([
             "unregister",
             unregister_root,
@@ -2895,7 +2896,7 @@ fn compact_and_unregister_use_exact_confirmations_without_touching_source() {
     ] {
         let rejected = Command::cargo_bin("atlas")
             .unwrap()
-            .env("LOCALAPPDATA", app_data.path())
+            .env("LOCALAPPDATA", &app_data_root)
             .args(args)
             .output()
             .unwrap();
@@ -2920,7 +2921,7 @@ fn compact_and_unregister_use_exact_confirmations_without_touching_source() {
         .contains("Workspace source"));
     let apply = Command::cargo_bin("atlas")
         .unwrap()
-        .env("LOCALAPPDATA", app_data.path())
+        .env("LOCALAPPDATA", &app_data_root)
         .args([
             "unregister",
             unregister_root,

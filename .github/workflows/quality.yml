@@ -53,8 +53,13 @@ jobs:
           set -euo pipefail
           rustup toolchain install '${{ matrix.rust }}' --profile minimal --component rustfmt --component clippy --component rust-analyzer
           rustup override set '${{ matrix.rust }}'
-          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-          export PATH="$HOME/.cargo/bin:$PATH"
+          rust_analyzer="$(rustup which --toolchain '${{ matrix.rust }}' rust-analyzer)"
+          rust_analyzer_dir="$(python -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).resolve().parent)' "$rust_analyzer")"
+          echo "$rust_analyzer_dir" >> "$GITHUB_PATH"
+          if [[ "${RUNNER_OS}" == "Windows" ]]; then
+            rust_analyzer_dir="$(cygpath -u "$rust_analyzer_dir")"
+          fi
+          export PATH="$rust_analyzer_dir:$PATH"
           rust-analyzer --version
           rustc --version --verbose
           cargo --version --verbose

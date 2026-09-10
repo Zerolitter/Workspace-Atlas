@@ -31,7 +31,7 @@ MAX_OUTPUT = 1_048_576
 MAX_ARCHIVE_BYTES = 64 * 1_048_576
 MAX_ARCHIVE_EXPANDED_BYTES = 64 * 1_048_576
 EXPECTED_WORKFLOW_SHA256 = "b5060db2858c8b31c2a9fa8f62b27ec1d2ece88732d3bc0be1451904644353d8"
-EXPECTED_QUALITY_WORKFLOW_SHA256 = "fcea8f8f14ffff91f8e49936164d4fb8a4240f83cddd8c43daff2ef117fca556"
+EXPECTED_QUALITY_WORKFLOW_SHA256 = "ef82bce0fb53632aaf7851ffa5cd4640422a6aeb632984e0c1f89e01f30f7fac"
 EXPECTED_GITATTRIBUTES = b"* text=auto\n\n*.rs text eol=lf\n*.toml text eol=lf\n*.md text eol=lf\n*.sql text eol=lf\n*.json text eol=lf\n*.jsonl text eol=lf\n*.yml text eol=lf\n*.yaml text eol=lf\n*.py text eol=lf\n*.ts text eol=lf\n*.tsx text eol=lf\n*.js text eol=lf\n*.jsx text eol=lf\nLICENSE text eol=lf\n\n*.png binary\n*.jpg binary\n*.jpeg binary\n*.gif binary\n*.webp binary\n*.sqlite binary\n*.scip binary\n*.zip binary\n*.7z binary\n"
 TIMEOUT_SECONDS = 180
 BASELINE_PACKAGE_PATHS = (
@@ -811,9 +811,11 @@ def check_workflow(sources: Sources) -> tuple[CheckResult, CheckResult, CheckRes
     )
     require(
         rust_quality_install[0] == "rust-quality"
-        and "--component rust-analyzer" in rust_quality_install[2],
+        and "--component rust-analyzer" in rust_quality_install[2]
+        and "rustup which --toolchain '${{ matrix.rust }}' rust-analyzer"
+        in rust_quality_install[2],
         "DR-LIFECYCLE",
-        "quality full-suite job must provision rust-analyzer",
+        "quality full-suite job must provision and directly expose rust-analyzer",
     )
     for command in (
         "cargo fmt --all -- --check",

@@ -549,7 +549,8 @@ fn stalled_stdin_non_reader() {
 
 struct Fixture {
     _database_directory: tempfile::TempDir,
-    workspace_directory: tempfile::TempDir,
+    _workspace_directory: tempfile::TempDir,
+    workspace_root: std::path::PathBuf,
     catalogue: std::path::PathBuf,
     connection: rusqlite::Connection,
     workspace: WorkspaceRecord,
@@ -564,23 +565,19 @@ fn fixture() -> Fixture {
         "pub fn answer() -> u8 { 42 }\n",
     )
     .unwrap();
+    let workspace_root = workspace_directory.path().canonicalize().unwrap();
     let config =
         Config::parse("schema_version = \"1.0.0\"\n[workspace]\ndisplay_name = \"mcp-t19\"\n")
             .unwrap();
     let catalogue = database_directory.path().join("atlas.sqlite");
     let connection = init_catalogue(&catalogue, &config).unwrap();
-    let workspace = register_workspace(
-        &connection,
-        workspace_directory.path(),
-        &config,
-        &catalogue,
-        "1.0.0",
-    )
-    .unwrap();
+    let workspace =
+        register_workspace(&connection, &workspace_root, &config, &catalogue, "1.0.0").unwrap();
     discovery::reconcile(&workspace, &connection, &config).unwrap();
     Fixture {
         _database_directory: database_directory,
-        workspace_directory,
+        _workspace_directory: workspace_directory,
+        workspace_root,
         catalogue,
         connection,
         workspace,
@@ -589,7 +586,7 @@ fn fixture() -> Fixture {
 
 fn workspace_arguments(fixture: &Fixture) -> Value {
     json!({
-        "workspace_root": fixture.workspace_directory.path(),
+        "workspace_root": fixture.workspace_root,
         "catalogue": fixture.catalogue,
     })
 }
@@ -1072,8 +1069,7 @@ fn raw_frames_and_utf8_semantics_are_bounded_before_application_access() {
     assert_success(&session.call(105, "atlas_governor_run", aggregate_at_limit));
 
     let mut aggregate_over_limit = governor_arguments(&fixture);
-    aggregate_over_limit["workspace_root"] =
-        json!(fixture.workspace_directory.path().join("missing"));
+    aggregate_over_limit["workspace_root"] = json!(fixture.workspace_root.join("missing"));
     aggregate_over_limit["catalogue"] = json!(fixture.catalogue.with_extension("missing"));
     aggregate_over_limit["semantic"]["path_targets"] =
         Value::Array((0..100).map(|index| json!(format!("p{index}"))).collect());
@@ -1082,8 +1078,7 @@ fn raw_frames_and_utf8_semantics_are_bounded_before_application_access() {
     assert_invalid_params(&session.call(106, "atlas_governor_run", aggregate_over_limit));
 
     let mut non_ascii_legacy_id = governor_arguments(&fixture);
-    non_ascii_legacy_id["workspace_root"] =
-        json!(fixture.workspace_directory.path().join("missing"));
+    non_ascii_legacy_id["workspace_root"] = json!(fixture.workspace_root.join("missing"));
     non_ascii_legacy_id["catalogue"] = json!(fixture.catalogue.with_extension("missing"));
     non_ascii_legacy_id["semantic"]["legacy_task_session_id"] = json!("é".repeat(64));
     assert_invalid_params(&session.call(107, "atlas_governor_run", non_ascii_legacy_id));
@@ -1303,7 +1298,7 @@ fn all_six_calls_match_shared_application_results() {
     let cli = Command::cargo_bin("atlas")
         .unwrap()
         .args(["governor", "capabilities"])
-        .arg(fixture.workspace_directory.path())
+        .arg(&fixture.workspace_root)
         .arg("--catalogue")
         .arg(&fixture.catalogue)
         .output()
@@ -1355,7 +1350,7 @@ fn all_six_calls_match_shared_application_results() {
     );
     let read_args = |fixture: &Fixture| {
         json!({
-            "workspace_root": fixture.workspace_directory.path(),
+            "workspace_root": fixture.workspace_root,
             "catalogue": fixture.catalogue,
             "task_session_id": task_session.task_session_id,
             "limit": DEFAULT_APPLICATION_PAGE_LIMIT,
@@ -1600,7 +1595,7 @@ fn typed_application_errors_and_catalogue_selection_are_preserved() {
         2,
         "atlas_task_show",
         json!({
-            "workspace_root": fixture.workspace_directory.path(),
+            "workspace_root": fixture.workspace_root,
             "catalogue": fixture.catalogue,
             "task_session_id": "missing-session",
         }),
@@ -1627,7 +1622,7 @@ fn typed_application_errors_and_catalogue_selection_are_preserved() {
         4,
         "atlas_governor_capabilities",
         json!({
-            "workspace_root": fixture.workspace_directory.path(),
+            "workspace_root": fixture.workspace_root,
             "catalogue": wrong_catalogue.path(),
         }),
     );
