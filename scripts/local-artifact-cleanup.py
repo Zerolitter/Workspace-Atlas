@@ -10,6 +10,42 @@ import re
 import stat
 import sys
 
+if os.name == "nt":
+    import ctypes
+    import msvcrt
+    from ctypes import wintypes
+
+    _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    _kernel32.CreateFileW.argtypes = (
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.LPVOID,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.HANDLE,
+    )
+    _kernel32.CreateFileW.restype = wintypes.HANDLE
+    _kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+    _kernel32.CloseHandle.restype = wintypes.BOOL
+    _kernel32.GetFinalPathNameByHandleW.argtypes = (
+        wintypes.HANDLE,
+        wintypes.LPWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+    )
+    _kernel32.GetFinalPathNameByHandleW.restype = wintypes.DWORD
+    _kernel32.SetFileInformationByHandle.argtypes = (
+        wintypes.HANDLE,
+        ctypes.c_int,
+        wintypes.LPVOID,
+        wintypes.DWORD,
+    )
+    _kernel32.SetFileInformationByHandle.restype = wintypes.BOOL
+
+    class _FileDispositionInfo(ctypes.Structure):
+        _fields_ = [("DeleteFile", wintypes.BOOL)]
+
 SCHEMA_VERSION = "1.0.0"
 FIXED_CANDIDATES = (
     ("target/debug", "cargo_build_output"),
@@ -29,6 +65,7 @@ PROTECTED_MARKERS = (
     "label-state", "label_state", "metric", "measurement", "outcome", "sample",
     "provenance",
 )
+RETAINED_VERDICT_STEM = re.compile(r"(?i)verdict(?:[-_](?:file|outcome))?\Z")
 PRESERVE_FILE = ".atlas-preserve"
 SCRATCH_NAME = re.compile(
     r"(?:\.local-atlas-scratch|\.atlas-benchmark-scratch|"
@@ -101,6 +138,7 @@ def _protected_name(name: str) -> bool:
     return name == PRESERVE_FILE or any(marker in lowered for marker in PROTECTED_MARKERS)
 
 
+
 def _contains_preserve_marker(directory: Path) -> bool:
     marker = directory / PRESERVE_FILE
     try:
@@ -110,6 +148,39 @@ def _contains_preserve_marker(directory: Path) -> bool:
     except OSError:
         return True
     return True
+
+
+def _is_retained_verdict_name(name: str) -> bool:
+    lowered = name.lower()
+    if not lowered.endswith(".json"):
+        return False
+    stem = lowered[:-len(".json")]
+    return bool(RETAINED_VERDICT_STEM.fullmatch(stem))
+
+
+def _contains_retained_verdict(directory: Path) -> bool:
+    try:
+        children = sorted(directory.iterdir(), key=lambda child: child.name)
+    except OSError:
+        return True
+    for child in children:
+        try:
+            metadata = _metadata(child)
+        except OSError:
+            return True
+        if _is_link_or_reparse(metadata):
+            return True
+        if (
+            stat.S_ISREG(metadata.st_mode)
+            and _is_retained_verdict_name(child.name)
+        ):
+            return True
+        if (
+            stat.S_ISDIR(metadata.st_mode)
+            and _contains_retained_verdict(child)
+        ):
+            return True
+    return False
 
 
 def _collect_candidate(
@@ -150,7 +221,12 @@ def _collect_candidate(
     if not stat.S_ISDIR(metadata.st_mode):
         unknown.append(_item(relative, "unknown", 0, "unsupported_file_type"))
         return
-    preserved = protected_ancestor or _contains_preserve_marker(path)
+    retained_root = artifact_class in {"generated_fixture", "benchmark_scratch"}
+    preserved = (
+        protected_ancestor
+        or _contains_preserve_marker(path)
+        or (retained_root and _contains_retained_verdict(path))
+    )
     try:
         children = sorted(path.iterdir(), key=lambda child: child.name)
     except OSError:
@@ -191,30 +267,102 @@ def _ambiguous_ancestor(path: Path, workspace: Path) -> Path | None:
     return None
 
 
-def _safe_delete_metadata(
+def _check_identity_chain(
     path: Path,
     workspace: Path,
-    expected: tuple[int, int, int, int],
-) -> os.stat_result:
-    relative = path.relative_to(workspace)
+) -> None:
+    try:
+        relative = path.relative_to(workspace)
+    except ValueError as error:
+        raise AuditError("candidate escapes workspace") from error
     current = workspace
     for part in relative.parts[:-1]:
         current /= part
-        metadata = _metadata(current)
+        try:
+            metadata = _metadata(current)
+        except FileNotFoundError:
+            raise AuditError("candidate ancestry was removed before deletion")
+        except OSError as error:
+            raise AuditError("candidate ancestry became ambiguous before deletion") from error
         if _is_link_or_reparse(metadata) or not stat.S_ISDIR(metadata.st_mode):
-            raise AuditError("candidate ancestry changed before deletion")
-    metadata = _metadata(path)
-    if (
-        _is_link_or_reparse(metadata)
-        or not stat.S_ISREG(metadata.st_mode)
-        or _identity(metadata) != expected
-    ):
-        raise AuditError("candidate changed before deletion")
+            raise AuditError("candidate ancestry became a link before deletion")
+
+
+def _safe_unlink_identity_bound(
+    path: Path,
+    workspace: Path,
+    expected: tuple[int, int, int, int],
+) -> None:
+    _check_identity_chain(path, workspace)
+    if os.name != "nt":
+        raise AuditError("identity-bound deletion is unavailable on this platform")
+    handle = _kernel32.CreateFileW(
+        str(path),
+        0x00010000 | 0x00000080,
+        0x00000001 | 0x00000002,
+        None,
+        3,
+        0x00200000,
+        None,
+    )
+    if handle == wintypes.HANDLE(-1).value:
+        error = ctypes.get_last_error()
+        if error in (2, 3):
+            return
+        raise AuditError("candidate could not be opened for identity-bound deletion")
+    fd = -1
     try:
-        path.resolve(strict=True).relative_to(workspace.resolve(strict=True))
-    except (OSError, ValueError) as error:
-        raise AuditError("candidate physical path escapes workspace") from error
-    return metadata
+        fd = msvcrt.open_osfhandle(handle, os.O_RDONLY)
+        handle = None
+        try:
+            metadata = os.fstat(fd)
+            actual = _identity(metadata)
+        except OSError as error:
+            raise AuditError(
+                "candidate identity changed before deletion"
+            ) from error
+        if (
+            _is_link_or_reparse(metadata)
+            or not stat.S_ISREG(metadata.st_mode)
+            or actual != expected
+        ):
+            raise AuditError("candidate identity changed before deletion")
+        native_handle = msvcrt.get_osfhandle(fd)
+        required = _kernel32.GetFinalPathNameByHandleW(
+            native_handle, None, 0, 0
+        )
+        if not required:
+            raise AuditError("candidate physical identity is unavailable")
+        buffer = ctypes.create_unicode_buffer(required + 1)
+        written = _kernel32.GetFinalPathNameByHandleW(
+            native_handle, buffer, len(buffer), 0
+        )
+        if not written or written >= len(buffer):
+            raise AuditError("candidate physical identity is unavailable")
+        final_path = buffer.value
+        if final_path.startswith("\\\\?\\"):
+            final_path = final_path[4:]
+        workspace_path = os.path.normcase(str(workspace.resolve(strict=True)))
+        opened_path = os.path.normcase(final_path)
+        try:
+            contained = os.path.commonpath((workspace_path, opened_path))
+        except ValueError as error:
+            raise AuditError("candidate physical path escapes workspace") from error
+        if contained != workspace_path:
+            raise AuditError("candidate physical path escapes workspace")
+        disposition = _FileDispositionInfo(True)
+        if not _kernel32.SetFileInformationByHandle(
+            native_handle,
+            4,
+            ctypes.byref(disposition),
+            ctypes.sizeof(disposition),
+        ):
+            raise AuditError("candidate could not be identity-bound deleted")
+    finally:
+        if fd >= 0:
+            os.close(fd)
+        elif handle:
+            _kernel32.CloseHandle(handle)
 
 
 def audit(workspace: Path, scratches: list[str], apply: bool) -> dict[str, object]:
@@ -253,7 +401,6 @@ def audit(workspace: Path, scratches: list[str], apply: bool) -> dict[str, objec
                         unknown.append(_item(_relative_text(child, workspace), "unknown", _tree_bytes(child), "unclassified_target_content"))
             except OSError:
                 unknown.append(_item("target", "unknown", 0, "inspection_failed"))
-
     proposed: list[dict[str, object]] = []
     protected: list[dict[str, object]] = []
     identities: dict[str, tuple[int, int, int, int]] = {}
@@ -282,15 +429,17 @@ def audit(workspace: Path, scratches: list[str], apply: bool) -> dict[str, objec
         for item in proposed:
             path = workspace / str(item["path"])
             try:
-                _safe_delete_metadata(
+                _safe_unlink_identity_bound(
                     path, workspace, identities[str(item["path"])]
                 )
-                path.unlink()
                 deleted.append(item)
             except FileNotFoundError:
                 continue
-            except (OSError, AuditError):
-                unknown.append(_item(str(item["path"]), "unknown", 0, "delete_failed"))
+            except (OSError, AuditError) as error:
+                reason = "candidate_changed_before_deletion" if "candidate" in str(error) else "delete_failed"
+                unknown.append(_item(
+                    str(item["path"]), "unknown", 0, reason,
+                ))
         unknown.sort(key=key)
 
     return {

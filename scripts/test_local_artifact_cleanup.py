@@ -2,16 +2,24 @@
 """Focused safety tests for local-artifact-cleanup.py."""
 from __future__ import annotations
 
+import importlib.util
 import json
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 SCRIPT = Path(__file__).with_name("local-artifact-cleanup.py")
+SPEC = importlib.util.spec_from_file_location("local_artifact_cleanup", SCRIPT)
+assert SPEC is not None and SPEC.loader is not None
+cleanup_module = importlib.util.module_from_spec(SPEC)
+sys.modules[SPEC.name] = cleanup_module
+SPEC.loader.exec_module(cleanup_module)
 
 
+SCRIPT = Path(__file__).with_name("local-artifact-cleanup.py")
 class LocalArtifactCleanupTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
@@ -179,6 +187,82 @@ class LocalArtifactCleanupTests(unittest.TestCase):
         self.assertTrue(benchmark_summary.exists())
         self.assertTrue(run_attestation.exists())
         self.assertTrue(benchmark_result.exists())
+
+    def test_retained_verdict_protects_generated_fixture_root_without_marker(self) -> None:
+        verdict = self.workspace / "_generated_fixture" / "verdict.json"
+        disposable = self.workspace / "_generated_fixture" / "temporary.bin"
+        verdict.parent.mkdir(parents=True)
+        disposable.write_bytes(b"delete")
+        verdict.write_text(json.dumps({"accepted": True, "state": "accepted"}), encoding="utf-8")
+
+        result, report = self.run_cleanup("--apply")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(report["proposed"], [])
+        self.assertEqual([item["path"] for item in report["protected"]], [
+            "_generated_fixture/temporary.bin",
+            "_generated_fixture/verdict.json",
+        ])
+        self.assertEqual(report["deleted"], [])
+        self.assertTrue(disposable.exists())
+        self.assertTrue(verdict.exists())
+
+    def test_unreadable_verdict_file_protects_generated_fixture_root(self) -> None:
+        undecidable = self.workspace / "_generated_fixture" / "verdict.json"
+        disposable = self.workspace / "_generated_fixture" / "temporary.bin"
+        undecidable.parent.mkdir(parents=True)
+        disposable.write_bytes(b"delete")
+        undecidable.write_bytes(b"\xff\xfe not utf-8 \xc3\x28")
+
+        result, report = self.run_cleanup("--apply")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(report["proposed"], [])
+        self.assertEqual(sorted(item["path"] for item in report["protected"]), [
+            "_generated_fixture/temporary.bin",
+            "_generated_fixture/verdict.json",
+        ])
+        self.assertEqual(report["deleted"], [])
+        self.assertTrue(disposable.exists())
+        self.assertTrue(undecidable.exists())
+
+    def test_apply_refuses_to_unlink_directory_entry_changed_after_validation(self) -> None:
+        disposable = self.workspace / "_generated_fixture" / "temporary.bin"
+        disposable.parent.mkdir(parents=True)
+        disposable.write_bytes(b"original")
+        replacement = self.workspace / "replacement.bin"
+        replacement.write_bytes(b"replacement")
+        original_identity = cleanup_module._identity
+        candidate_identity_calls = 0
+
+        def replace_after_identity(metadata: object) -> tuple[int, int, int, int]:
+            nonlocal candidate_identity_calls
+            identity = original_identity(metadata)
+            if identity[2] == len(b"original"):
+                candidate_identity_calls += 1
+                if candidate_identity_calls == 2:
+                    disposable.unlink()
+                    replacement.replace(disposable)
+            return identity
+
+        with mock.patch.object(
+            cleanup_module,
+            "_identity",
+            side_effect=replace_after_identity,
+        ):
+            report = cleanup_module.audit(self.workspace, [], apply=True)
+
+        self.assertEqual(report["deleted"], [])
+        self.assertTrue(
+            any(
+                item["path"] == "_generated_fixture/temporary.bin"
+                and "change" in str(item.get("reason", ""))
+                for item in report["unknown"]
+            ),
+            msg=repr(report),
+        )
+        self.assertTrue(disposable.exists())
+        self.assertIn(disposable.read_bytes(), (b"original", b"replacement"))
 
 
 if __name__ == "__main__":
