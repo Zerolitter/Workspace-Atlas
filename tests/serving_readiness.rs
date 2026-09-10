@@ -20,6 +20,7 @@ use workspace_atlas::workspace::{register_workspace, WorkspaceRecord};
 
 fn fixture() -> (
     tempfile::TempDir,
+    std::path::PathBuf,
     rusqlite::Connection,
     WorkspaceRecord,
     Config,
@@ -32,27 +33,35 @@ fn fixture_with_unrelated_files(
     unrelated_files: usize,
 ) -> (
     tempfile::TempDir,
+    std::path::PathBuf,
     rusqlite::Connection,
     WorkspaceRecord,
     Config,
     String,
 ) {
-    let directory = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(directory.path().join("src")).unwrap();
+    let tempdir = tempfile::tempdir().unwrap();
+    // Canonicalize the workspace root before any identity-bearing call. On
+    // macOS, `tempfile::tempdir()` can return a symlink-backed lexical path
+    // whose canonical spelling differs, and on Windows a short-name alias
+    // can resolve to a different spelling. Production `resolve_catalogue`
+    // canonicalizes the supplied root and rejects a stored root that does
+    // not match via `paths_have_same_identity`, so the fixture must
+    // register and re-supply the same canonical spelling it would persist.
+    let directory = std::fs::canonicalize(tempdir.path()).unwrap();
+    std::fs::create_dir_all(directory.join("src")).unwrap();
     std::fs::write(
-        directory.path().join("src/a.ts"),
+        directory.join("src/a.ts"),
         "import { beta } from './b';\nexport function alpha() { return beta(); }\n",
     )
     .unwrap();
     std::fs::write(
-        directory.path().join("src/b.ts"),
+        directory.join("src/b.ts"),
         "export function beta() { return 2; }\n",
     )
     .unwrap();
     for index in 0..unrelated_files {
         std::fs::write(
             directory
-                .path()
                 .join("src")
                 .join(format!("unrelated-{index:04}.ts")),
             format!("export function unrelated{index:04}() {{ return {index}; }}\n"),
@@ -63,14 +72,16 @@ fn fixture_with_unrelated_files(
         "schema_version = \"1.0.0\"\n[workspace]\ndisplay_name = \"serving readiness\"\n",
     )
     .unwrap();
-    let catalogue = directory.path().join("atlas.sqlite");
+    let catalogue = directory.join("atlas.sqlite");
     let connection = init_catalogue(&catalogue, &config).unwrap();
     let workspace =
-        register_workspace(&connection, directory.path(), &config, &catalogue, "1.0.0").unwrap();
+        register_workspace(&connection, &directory, &config, &catalogue, "1.0.0").unwrap();
     let generation = discovery::reconcile(&workspace, &connection, &config)
         .unwrap()
         .candidate_generation_id;
-    (directory, connection, workspace, config, generation)
+    (
+        tempdir, directory, connection, workspace, config, generation,
+    )
 }
 
 fn compile(
@@ -330,7 +341,7 @@ impl MetricClock for SequenceClock {
 fn assert_consumed_projection_mutation_falls_back(
     mutate: impl FnOnce(&rusqlite::Connection, &str),
 ) {
-    let (_directory, connection, workspace, _config, generation) = fixture();
+    let (_tempdir, _directory, connection, workspace, _config, generation) = fixture();
     let alpha = insert_consumed_relationship(&connection, &workspace, &generation);
     let request = CompileRequest {
         known_symbols: vec![alpha],
@@ -373,7 +384,7 @@ fn assert_consumed_projection_mutation_falls_back(
 
 #[test]
 fn status_tracks_absent_ready_failed_policy_drift_and_generation_supersession() {
-    let (directory, connection, workspace, config, first_generation) = fixture();
+    let (_tempdir, directory, connection, workspace, config, first_generation) = fixture();
 
     let absent = serving_status(&connection, &workspace).unwrap();
     assert_eq!(absent.state, ServingReadinessState::Absent);
@@ -409,7 +420,7 @@ fn status_tracks_absent_ready_failed_policy_drift_and_generation_supersession() 
     );
 
     std::fs::write(
-        directory.path().join("src/b.ts"),
+        directory.join("src/b.ts"),
         "export function beta() { return 3; }\n",
     )
     .unwrap();
@@ -417,11 +428,8 @@ fn status_tracks_absent_ready_failed_policy_drift_and_generation_supersession() 
         .unwrap()
         .candidate_generation_id;
     assert_ne!(first_generation, second_generation);
-    let stale = build_serving_status_output(
-        directory.path(),
-        Some(&directory.path().join("atlas.sqlite")),
-    )
-    .unwrap();
+    let stale =
+        build_serving_status_output(&directory, Some(&directory.join("atlas.sqlite"))).unwrap();
     assert_eq!(stale.state, ServingReadinessState::Absent);
     assert_eq!(
         stale.active_generation_id.as_deref(),
@@ -486,7 +494,7 @@ fn status_tracks_absent_ready_failed_policy_drift_and_generation_supersession() 
 
 #[test]
 fn rebuild_reports_deterministic_input_stage_and_output_metrics() {
-    let (_directory, connection, workspace, _config, generation) = fixture();
+    let (_tempdir, _directory, connection, workspace, _config, generation) = fixture();
 
     let first = build_serving_generation(&connection, &workspace).unwrap();
     let second = build_serving_generation(&connection, &workspace).unwrap();
@@ -543,7 +551,7 @@ fn rebuild_reports_deterministic_input_stage_and_output_metrics() {
 
 #[test]
 fn ready_and_truth_fallback_match_semantics_across_task_kinds_and_budgets() {
-    let (_directory, connection, workspace, _config, generation) = fixture();
+    let (_tempdir, _directory, connection, workspace, _config, generation) = fixture();
     let cases = [
         (TaskKind::Explore, 20, 20_000, 8_000),
         (TaskKind::BugFix, 1, 1_000, 500),
@@ -657,7 +665,7 @@ fn corrupt_consumed_edge_retries_once_through_truth() {
 
 #[test]
 fn unused_coverage_projection_corruption_cannot_change_compile_output() {
-    let (_directory, connection, workspace, _config, generation) = fixture();
+    let (_tempdir, _directory, connection, workspace, _config, generation) = fixture();
     let alpha = insert_consumed_relationship(&connection, &workspace, &generation);
     let request = CompileRequest {
         known_symbols: vec![alpha],
@@ -691,7 +699,8 @@ fn unused_coverage_projection_corruption_cannot_change_compile_output() {
 
 #[test]
 fn corruption_outside_request_frontier_cannot_change_output() {
-    let (_directory, connection, workspace, _config, generation) = fixture_with_unrelated_files(1);
+    let (_tempdir, _directory, connection, workspace, _config, generation) =
+        fixture_with_unrelated_files(1);
     let alpha = insert_consumed_relationship(&connection, &workspace, &generation);
     let request = CompileRequest {
         known_symbols: vec![alpha],
@@ -725,7 +734,7 @@ fn corruption_outside_request_frontier_cannot_change_output() {
 #[test]
 fn serving_validation_vm_work_is_stable_under_unrelated_growth() {
     let measure = |unrelated_files: usize, salt: u8| {
-        let (_directory, connection, workspace, _config, generation) =
+        let (_tempdir, _directory, connection, workspace, _config, generation) =
             fixture_with_unrelated_files(unrelated_files);
         let alpha = insert_consumed_relationship(&connection, &workspace, &generation);
         let request = CompileRequest {
@@ -767,7 +776,8 @@ fn serving_validation_vm_work_is_stable_under_unrelated_growth() {
 
 #[test]
 fn irrelevant_fanout_prefix_reports_bounded_frontier_cutoff() {
-    let (_directory, connection, workspace, _config, generation) = fixture_with_unrelated_files(3);
+    let (_tempdir, _directory, connection, workspace, _config, generation) =
+        fixture_with_unrelated_files(3);
     let alpha = insert_consumed_relationship(&connection, &workspace, &generation);
     let (_, extractor_run_id, revision_id) = symbol_identity(&connection, &generation, "src/a.ts");
     for index in 0..3 {
@@ -857,7 +867,7 @@ fn irrelevant_fanout_prefix_reports_bounded_frontier_cutoff() {
 
 #[test]
 fn contradictory_resolved_kind_fails_closed_and_rejects_serving_projection() {
-    let (_directory, connection, workspace, _config, generation) = fixture();
+    let (_tempdir, _directory, connection, workspace, _config, generation) = fixture();
     let alpha = insert_consumed_relationship(&connection, &workspace, &generation);
     connection
         .execute(
@@ -900,7 +910,7 @@ fn contradictory_resolved_kind_fails_closed_and_rejects_serving_projection() {
 
 #[test]
 fn corruption_fallback_keeps_one_request_wide_hard_deadline() {
-    let (_directory, connection, workspace, _config, generation) = fixture();
+    let (_tempdir, _directory, connection, workspace, _config, generation) = fixture();
     let alpha = insert_consumed_relationship(&connection, &workspace, &generation);
     let template_request = CompileRequest {
         known_symbols: vec![alpha.clone()],
