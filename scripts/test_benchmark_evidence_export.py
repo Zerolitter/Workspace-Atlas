@@ -136,13 +136,24 @@ class BenchmarkEvidenceExportTests(unittest.TestCase):
     def test_rejects_link_input_without_creating_destination(self) -> None:
         real = self.workspace / "real.ndjson"
         real.write_text("{}\n", encoding="utf-8")
-        link = self.workspace / "linked.ndjson"
+        source = self.workspace / "linked.ndjson"
         try:
-            link.symlink_to(real)
-        except OSError as error:
-            self.skipTest(f"file symlinks unavailable: {error}")
+            source.symlink_to(real)
+        except OSError:
+            outside = Path(self.temporary.name) / "outside"
+            outside.mkdir()
+            (outside / "raw.ndjson").write_text("{}\n", encoding="utf-8")
+            linked_directory = self.workspace / "linked"
+            junction = subprocess.run(
+                ["cmd", "/c", "mklink", "/J", str(linked_directory), str(outside)],
+                capture_output=True,
+                check=False,
+            )
+            if junction.returncode:
+                self.skipTest("file links and directory junctions are unavailable")
+            source = linked_directory / "raw.ndjson"
 
-        result = self.run_export(link)
+        result = self.run_export(source)
 
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(self.destination.exists())

@@ -17,6 +17,7 @@ from typing import Any
 SCHEMA_VERSION = "1.0.0"
 MAX_INPUT_BYTES = 512 * 1024 * 1024
 MAX_RECORD_BYTES = 8 * 1024 * 1024
+MAX_DOCUMENT_BYTES = 1024 * 1024
 MAX_RECORDS = 200_000
 ENVIRONMENT_KEYS = frozenset({
     "atlas_version", "rustc_version", "toolchain", "os", "architecture", "cpu"
@@ -208,7 +209,14 @@ def _csv_bytes(records: list[dict[str, Any]]) -> bytes:
 def _environment(path: Path | None) -> dict[str, Any]:
     supplied: dict[str, Any] = {}
     if path is not None:
-        value = _json_load(path.read_text(encoding="utf-8"), "environment")
+        metadata = _safe_metadata(path, "environment input", "file")
+        if metadata.st_size > MAX_DOCUMENT_BYTES:
+            raise ExportError("environment input exceeds byte bound")
+        try:
+            text = path.read_bytes().decode("utf-8")
+        except (OSError, UnicodeDecodeError) as error:
+            raise ExportError("environment input is unreadable UTF-8") from error
+        value = _json_load(text, "environment")
         if not isinstance(value, dict):
             raise ExportError("environment input must be an object")
         for key in sorted(ENVIRONMENT_KEYS):

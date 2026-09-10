@@ -55,6 +55,7 @@ class LocalArtifactCleanupTests(unittest.TestCase):
         self.assertEqual(report["deleted"], [
             {"bytes": 3, "class": "provider_temp_output", "path": ".atlas-provider-tmp/provider.tmp"}
         ])
+        self.assertEqual(report["proposed"], report["deleted"])
         self.assertFalse(disposable.exists())
         self.assertEqual(repeated.returncode, 0, repeated.stderr)
         self.assertEqual(empty["deleted"], [])
@@ -68,8 +69,14 @@ class LocalArtifactCleanupTests(unittest.TestCase):
         link = self.workspace / "provider-output"
         try:
             link.symlink_to(outside, target_is_directory=True)
-        except OSError as error:
-            self.skipTest(f"directory symlinks unavailable: {error}")
+        except OSError:
+            junction = subprocess.run(
+                ["cmd", "/c", "mklink", "/J", str(link), str(outside)],
+                capture_output=True,
+                check=False,
+            )
+            if junction.returncode:
+                self.skipTest("directory links and junctions are unavailable")
 
         result, report = self.run_cleanup(
             "--benchmark-scratch", "../outside", "--apply"
@@ -81,6 +88,21 @@ class LocalArtifactCleanupTests(unittest.TestCase):
         ])
         self.assertTrue(payload.exists())
         self.assertTrue(link.exists())
+
+    def test_explicit_scratch_name_cannot_reclassify_workspace_content(self) -> None:
+        source = self.workspace / "scripts" / "keep.py"
+        source.parent.mkdir()
+        source.write_text("keep = True\n", encoding="utf-8")
+
+        result, report = self.run_cleanup(
+            "--benchmark-scratch", "scripts", "--apply"
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            [item["path"] for item in report["unknown"]], ["scripts"]
+        )
+        self.assertTrue(source.exists())
 
     def test_protected_evidence_and_unknown_target_content_are_never_deleted(self) -> None:
         evidence = self.workspace / "_generated_fixture" / "raw-observations.ndjson"

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 from pathlib import Path, PurePath
 import stat
 import sys
@@ -26,6 +27,10 @@ PROTECTED_MARKERS = (
     "evidence", "portable-bundle", "portable_bundle", "results.csv",
 )
 PRESERVE_FILE = ".atlas-preserve"
+SCRATCH_NAME = re.compile(
+    r"(?:\.local-atlas-scratch|\.atlas-benchmark-scratch|"
+    r"atlas-benchmark-scratch(?:-[A-Za-z0-9._-]+)?)\Z"
+)
 
 
 class AuditError(RuntimeError):
@@ -136,14 +141,28 @@ def _collect_candidate(
 
 def _safe_scratch(raw: str, workspace: Path) -> tuple[Path | None, dict[str, object] | None]:
     supplied = Path(raw)
-    if supplied.is_absolute() or ".." in PurePath(raw).parts or supplied in (Path(""), Path(".")):
-        return None, _item(raw.replace("\\", "/"), "unknown", 0, "containment_escape")
-    candidate = workspace / supplied
-    try:
-        candidate.relative_to(workspace)
-    except ValueError:
-        return None, _item(raw.replace("\\", "/"), "unknown", 0, "containment_escape")
-    return candidate, None
+    if (
+        supplied.is_absolute()
+        or len(PurePath(raw).parts) != 1
+        or not SCRATCH_NAME.fullmatch(supplied.name)
+    ):
+        return None, _item(
+            raw.replace("\\", "/"), "unknown", 0, "unsafe_scratch_identity"
+        )
+    return workspace / supplied, None
+
+def _safe_delete_metadata(path: Path, workspace: Path) -> os.stat_result:
+    relative = path.relative_to(workspace)
+    current = workspace
+    for part in relative.parts[:-1]:
+        current /= part
+        metadata = _metadata(current)
+        if _is_link_or_reparse(metadata) or not stat.S_ISDIR(metadata.st_mode):
+            raise AuditError("candidate ancestry changed before deletion")
+    metadata = _metadata(path)
+    if _is_link_or_reparse(metadata) or not stat.S_ISREG(metadata.st_mode):
+        raise AuditError("candidate changed before deletion")
+    return metadata
 
 
 def audit(workspace: Path, scratches: list[str], apply: bool) -> dict[str, object]:
@@ -194,30 +213,13 @@ def audit(workspace: Path, scratches: list[str], apply: bool) -> dict[str, objec
         for item in proposed:
             path = workspace / str(item["path"])
             try:
-                metadata = _metadata(path)
-                if _is_link_or_reparse(metadata) or not stat.S_ISREG(metadata.st_mode):
-                    unknown.append(_item(str(item["path"]), "unknown", 0, "changed_before_delete"))
-                    continue
+                _safe_delete_metadata(path, workspace)
                 path.unlink()
                 deleted.append(item)
             except FileNotFoundError:
                 continue
-            except OSError:
+            except (OSError, AuditError):
                 unknown.append(_item(str(item["path"]), "unknown", 0, "delete_failed"))
-        for root, _ in candidates:
-            if not root.exists() or root.is_symlink() or root.is_file():
-                continue
-            directories = [path for path in root.rglob("*") if path.is_dir() and not path.is_symlink()]
-            for directory in sorted(directories, key=lambda value: len(value.parts), reverse=True):
-                try:
-                    directory.rmdir()
-                except OSError:
-                    pass
-            try:
-                root.rmdir()
-            except OSError:
-                pass
-        proposed = []
         unknown.sort(key=key)
 
     return {
