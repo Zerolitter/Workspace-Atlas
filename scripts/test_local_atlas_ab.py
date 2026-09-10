@@ -17,6 +17,9 @@ from unittest import mock
 SCRIPT = Path(__file__).with_name("local-atlas-ab.py")
 EXPORTER = Path(__file__).with_name("benchmark-evidence-export.py")
 EXAMPLE = Path(__file__).with_name("local-ab-example-tasks.json")
+
+DOCS = Path(__file__).parent.parent / "docs" / "local-testing.md"
+
 SPEC = importlib.util.spec_from_file_location("local_atlas_ab", SCRIPT)
 assert SPEC is not None and SPEC.loader is not None
 harness = importlib.util.module_from_spec(SPEC)
@@ -198,7 +201,7 @@ class LocalAtlasAbTests(unittest.TestCase):
         }
         with mock.patch.object(
             harness, "_run",
-            side_effect=[(0, harness._capture(successful, 0)), RuntimeError("simulated interruption")],
+            side_effect=[(0, harness._capture(successful, 0), 12), RuntimeError("simulated interruption")],
         ):
             with self.assertRaisesRegex(RuntimeError, "simulated interruption"):
                 harness.campaign(
@@ -256,10 +259,112 @@ class LocalAtlasAbTests(unittest.TestCase):
         self.assertEqual(summary["counts"]["accepted"], 1)
         self.assertEqual(summary["counts"]["rejected"], 1)
 
-    def test_example_manifest_is_tiny_and_valid(self) -> None:
+    def test_timeout_and_adapter_identity_are_material_campaign_parameters(self) -> None:
+        first = self.run_harness(
+            "alpha",
+            destination=self.workspace / "campaign-five-seconds",
+            extra=("--repetitions", "1", "--timeout", "5"),
+        )
+        second = self.run_harness(
+            "alpha",
+            destination=self.workspace / "campaign-six-seconds",
+            extra=("--repetitions", "1", "--timeout", "6"),
+        )
+        self.assertEqual(first.returncode, 0, first.stderr)
+        self.assertEqual(second.returncode, 0, second.stderr)
+        first_manifest = json.loads(first.stdout)
+        second_manifest = json.loads(second.stdout)
+        self.assertEqual(first_manifest["timeout_seconds"], 5.0)
+        self.assertEqual(second_manifest["timeout_seconds"], 6.0)
+        self.assertEqual(
+            first_manifest["adapter_identity_sha256"],
+            second_manifest["adapter_identity_sha256"],
+        )
+        self.assertEqual(len(first_manifest["adapter_identity_sha256"]), 64)
+        self.assertNotEqual(
+            first_manifest["campaign_identity_sha256"],
+            second_manifest["campaign_identity_sha256"],
+        )
+
+    def test_runner_wall_time_is_independent_and_adapter_timing_is_preserved(
+        self,
+    ) -> None:
+        successful = self.run_harness(
+            "alpha", extra=("--repetitions", "1", "--timeout", "5")
+        )
+        self.assertEqual(successful.returncode, 0, successful.stderr)
+        alpha = self.records()
+        self.assertEqual(
+            [record["adapter_elapsed_ms"] for record in alpha],
+            [13, 11],
+        )
+
+        timeout_destination = self.workspace / "timeout-campaign"
+        timed = self.run_harness(
+            "slow",
+            destination=timeout_destination,
+            extra=("--repetitions", "1", "--timeout", "0.05"),
+        )
+        self.assertEqual(timed.returncode, 0, timed.stderr)
+        timed_out = [
+            json.loads(line)
+            for line in (timeout_destination / "raw.ndjson")
+            .read_text(encoding="utf-8")
+            .splitlines()
+        ]
+        records = alpha + timed_out
+        self.assertTrue(
+            all(
+                isinstance(record["runner_wall_ms"], (int, float))
+                and record["runner_wall_ms"] >= 0
+                for record in records
+            )
+        )
+        self.assertTrue(
+            all(record["error"] == {"kind": "timeout"} for record in timed_out)
+        )
+        self.assertTrue(all(record["runner_wall_ms"] >= 40 for record in timed_out))
+
+    def test_example_manifest_has_three_representative_non_guaranteed_tasks(
+        self,
+    ) -> None:
         example = json.loads(EXAMPLE.read_text(encoding="utf-8"))
         self.assertEqual(example["schema_version"], "1.0.0")
-        self.assertEqual([task["id"] for task in example["tasks"]], ["inspect-route"])
+        self.assertEqual(
+            [task["id"] for task in example["tasks"]],
+            [
+                "inspect-route-source",
+                "plan-bounded-change",
+                "handle-stale-error",
+            ],
+        )
+        prompts = " ".join(task["prompt"].lower() for task in example["tasks"])
+        self.assertNotIn("guarantee", prompts)
+        self.assertNotIn("will succeed", prompts)
+
+    def test_documented_windows_commands_are_directly_copyable_one_liners(
+        self,
+    ) -> None:
+        documentation = DOCS.read_text(encoding="utf-8")
+        self.assertIn(
+            "py -3 scripts/local-artifact-cleanup.py --workspace .",
+            documentation,
+        )
+        self.assertIn(
+            "py -3 scripts/local-atlas-ab.py --workspace . --tasks "
+            "scripts/local-ab-example-tasks.json --adapter "
+            "config/local-adapter.json --destination "
+            ".local-atlas-runs/campaign-001 --task inspect-route-source "
+            "--repetitions 1 --timeout 300",
+            documentation,
+        )
+        self.assertIn(
+            "py -3 scripts/benchmark-evidence-export.py --workspace . "
+            "--input .local-atlas-runs/campaign-001/raw.ndjson "
+            "--destination .local-atlas-runs/campaign-001-bundle",
+            documentation,
+        )
+        self.assertNotIn("environment.json contains no secrets", documentation)
 
 
 if __name__ == "__main__":

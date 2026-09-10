@@ -30,7 +30,7 @@ MAX_RUNNER_OUTPUT_BYTES = 1024 * 1024
 TASK_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
 SECRET_OPTION = re.compile(r"(?i)(?:secret|token|password|api[-_]?key|credential)")
 METRIC_FIELDS = (
-    "elapsed_ms", "tool_calls", "files_read", "source_bytes_read", "atlas_runtime_ms"
+    "tool_calls", "files_read", "source_bytes_read", "atlas_runtime_ms"
 )
 
 if os.name == "nt":
@@ -270,6 +270,7 @@ def _capture(output: dict[str, Any], exit_code: int) -> dict[str, Any]:
     else:
         raise HarnessError("accepted outcome is malformed")
     captured: dict[str, Any] = {"accepted_outcome": accepted_outcome}
+    captured["adapter_elapsed_ms"] = _nonnegative(output.get("elapsed_ms"))
     for field in METRIC_FIELDS:
         captured[field] = _nonnegative(output.get(field))
     tokens = output.get("tokens")
@@ -310,6 +311,7 @@ def _capture(output: dict[str, Any], exit_code: int) -> dict[str, Any]:
 def _unavailable(kind: str) -> dict[str, Any]:
     return {
         "accepted_outcome": {"accepted": None, "state": "unavailable"},
+        "adapter_elapsed_ms": None,
         **{field: None for field in METRIC_FIELDS},
         "tokens": None,
         "atlas_route": None,
@@ -406,12 +408,13 @@ class _ProcessOwner:
                 pass
 
 
-def _run(command: list[str], request: dict[str, Any], cwd: Path, timeout: float) -> tuple[int | None, dict[str, Any]]:
+def _run(command: list[str], request: dict[str, Any], cwd: Path, timeout: float) -> tuple[int | None, dict[str, Any], int]:
     environment = {
         key: value for key, value in os.environ.items()
         if key.upper() in {"PATH", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "LANG", "LC_ALL"}
     }
     environment.update({"ATLAS_ENABLED": "1" if request["arm"] == "on" else "0", "ATLAS_AB_ARM": request["arm"], "PYTHONIOENCODING": "utf-8"})
+    started = time.monotonic_ns()
     with tempfile.TemporaryFile(dir=cwd) as runner_input, tempfile.TemporaryFile(
         dir=cwd
     ) as runner_output:
@@ -427,7 +430,8 @@ def _run(command: list[str], request: dict[str, Any], cwd: Path, timeout: float)
                 env=environment,
             )
         except OSError:
-            return None, _unavailable("runner_launch")
+            wall_ms = (time.monotonic_ns() - started) / 1_000_000
+            return None, _unavailable("runner_launch"), wall_ms
         deadline = time.monotonic() + timeout
         failure: str | None = None
         while process.poll() is None:
@@ -440,13 +444,24 @@ def _run(command: list[str], request: dict[str, Any], cwd: Path, timeout: float)
             time.sleep(0.01)
         if failure is not None:
             owner.terminate()
-            return None if failure == "timeout" else process.returncode, _unavailable(failure)
+            wall_ms = (time.monotonic_ns() - started) / 1_000_000
+            return (
+                None if failure == "timeout" else process.returncode,
+                _unavailable(failure),
+                wall_ms,
+            )
         try:
             owner.close()
         except OSError:
-            return process.returncode, _unavailable("runner_containment_failure")
+            wall_ms = (time.monotonic_ns() - started) / 1_000_000
+            return (
+                process.returncode,
+                _unavailable("runner_containment_failure"),
+                wall_ms,
+            )
+        wall_ms = (time.monotonic_ns() - started) / 1_000_000
         if runner_output.tell() > MAX_RUNNER_OUTPUT_BYTES:
-            return process.returncode, _unavailable("runner_output_too_large")
+            return process.returncode, _unavailable("runner_output_too_large"), wall_ms
         runner_output.seek(0)
         stdout = runner_output.read(MAX_RUNNER_OUTPUT_BYTES + 1)
     try:
@@ -457,9 +472,10 @@ def _run(command: list[str], request: dict[str, Any], cwd: Path, timeout: float)
         )
         if not isinstance(value, dict):
             raise HarnessError("runner output is not an object")
-        return process.returncode, _capture(value, process.returncode)
+        return process.returncode, _capture(value, process.returncode), wall_ms
     except (UnicodeDecodeError, json.JSONDecodeError, HarnessError):
-        return process.returncode, _unavailable("malformed_runner_output")
+        return process.returncode, _unavailable("malformed_runner_output"), wall_ms
+
 
 def _write_manifest(destination: Path, manifest: dict[str, Any]) -> None:
     temporary = destination / ".harness-manifest.tmp"
@@ -494,13 +510,20 @@ def campaign(workspace: Path, tasks_path: Path, adapter_path: Path, destination:
     adapter_document, _ = _load_object(adapter_path, "adapter")
     chosen = _tasks(task_document, selected, maximum_tasks)
     adapter, model, command = _adapter(adapter_document)
-    command_identity = _sha256(_canonical({"adapter": adapter, "command": command, "model": model}))
+    adapter_identity = _sha256(_canonical({"adapter": adapter}))
+    command_identity = _sha256(_canonical({"command": command}))
     model_identity = _sha256(_canonical(model))
     task_manifest_identity = _sha256(task_bytes)
     expected_raw_count = len(chosen) * repetitions * 2
     campaign_identity = _sha256(_canonical({
-        "command_identity_sha256": command_identity, "repetitions": repetitions,
-        "task_manifest_sha256": task_manifest_identity, "tasks": selected,
+        "adapter_identity_sha256": adapter_identity,
+        "command_identity_sha256": command_identity,
+        "max_tasks": maximum_tasks,
+        "model_identity_sha256": model_identity,
+        "repetitions": repetitions,
+        "task_manifest_sha256": task_manifest_identity,
+        "tasks": selected,
+        "timeout_seconds": timeout,
     }))
 
     destination.mkdir()
@@ -511,10 +534,12 @@ def campaign(workspace: Path, tasks_path: Path, adapter_path: Path, destination:
     def manifest(state: str) -> dict[str, Any]:
         return {
             "adapter": _identity_display(adapter),
+            "adapter_identity_sha256": adapter_identity,
             "campaign_identity_sha256": campaign_identity,
             "command_display": _command_display(command),
             "command_identity_sha256": command_identity,
             "expected_raw_count": expected_raw_count,
+            "max_tasks": maximum_tasks,
             "model": _identity_display(model),
             "model_identity_sha256": model_identity,
             "raw_count": len(records),
@@ -526,6 +551,7 @@ def campaign(workspace: Path, tasks_path: Path, adapter_path: Path, destination:
                 "name": tasks_path.name, "sha256": task_manifest_identity,
             },
             "tasks": selected,
+            "timeout_seconds": timeout,
         }
 
     with raw_path.open("xb") as raw_output:
@@ -541,8 +567,11 @@ def campaign(workspace: Path, tasks_path: Path, adapter_path: Path, destination:
                         "arm": arm, "prompt": task["prompt"], "repetition": repetition,
                         "schema_version": SCHEMA_VERSION, "task_id": task["id"],
                     }
-                    exit_code, captured = _run(command, request, arm_workspace, timeout)
+                    exit_code, captured, runner_wall_ms = _run(
+                        command, request, arm_workspace, timeout,
+                    )
                     record = {
+                        "adapter_identity_sha256": adapter_identity,
                         "arm": arm, "arm_workspace": relative.as_posix(),
                         "campaign_identity_sha256": campaign_identity,
                         "command_identity_sha256": command_identity,
@@ -550,8 +579,10 @@ def campaign(workspace: Path, tasks_path: Path, adapter_path: Path, destination:
                         "kind": "local-atlas-ab-observation",
                         "model": _identity_display(model),
                         "model_identity_sha256": model_identity,
-                        "repetition": repetition, "schema_version": SCHEMA_VERSION,
+                        "repetition": repetition,
+                        "runner_wall_ms": runner_wall_ms,
                         "task_id": task["id"], "task_identity_sha256": task_identity,
+                        "timeout_seconds": timeout,
                         **captured,
                     }
                     record_bytes = _canonical(record)
