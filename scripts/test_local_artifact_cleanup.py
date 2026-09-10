@@ -226,6 +226,58 @@ class LocalArtifactCleanupTests(unittest.TestCase):
         self.assertTrue(disposable.exists())
         self.assertTrue(undecidable.exists())
 
+    def test_unrecognized_decision_json_is_not_proposed_as_disposable(self) -> None:
+        decision = self.workspace / "_generated_fixture" / "decision.json"
+        decision.parent.mkdir(parents=True)
+        decision.write_text(
+            json.dumps({"accepted_outcome": {"accepted": True, "state": "accepted"}}),
+            encoding="utf-8",
+        )
+
+        result, report = self.run_cleanup("--apply")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            [item for item in report["proposed"] if item["path"] == "_generated_fixture/decision.json"],
+            [],
+        )
+        self.assertTrue(
+            any(
+                item["path"] == "_generated_fixture/decision.json"
+                and item.get("reason") == "unrecognized_generated_fixture_leaf"
+                for item in report["unknown"]
+            ),
+            msg=repr(report),
+        )
+        self.assertEqual(report["deleted"], [])
+        self.assertTrue(decision.exists())
+
+    def test_unrecognized_provider_output_leaf_fails_closed(self) -> None:
+        decision = self.workspace / "provider-output" / "decision.json"
+        decision.parent.mkdir(parents=True)
+        decision.write_text(
+            json.dumps({"accepted_outcome": {"accepted": True, "state": "accepted"}}),
+            encoding="utf-8",
+        )
+
+        result, report = self.run_cleanup("--apply")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            [item for item in report["proposed"] if item["path"] == "provider-output/decision.json"],
+            [],
+        )
+        self.assertTrue(
+            any(
+                item["path"] == "provider-output/decision.json"
+                and item.get("reason") == "unrecognized_provider_output_leaf"
+                for item in report["unknown"]
+            ),
+            msg=repr(report),
+        )
+        self.assertEqual(report["deleted"], [])
+        self.assertTrue(decision.exists())
+
     def test_apply_refuses_to_unlink_directory_entry_changed_after_validation(self) -> None:
         disposable = self.workspace / "_generated_fixture" / "temporary.bin"
         disposable.parent.mkdir(parents=True)

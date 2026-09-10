@@ -65,6 +65,7 @@ PROTECTED_MARKERS = (
     "label-state", "label_state", "metric", "measurement", "outcome", "sample",
     "provenance",
 )
+RECOGNIZED_DISPOSABLE_LEAVES = frozenset({"temporary.bin", "provider.tmp"})
 RETAINED_VERDICT_STEM = re.compile(r"(?i)verdict(?:[-_](?:file|outcome))?\Z")
 PRESERVE_FILE = ".atlas-preserve"
 SCRATCH_NAME = re.compile(
@@ -213,10 +214,23 @@ def _collect_candidate(
                 and path.suffix.lower() in {".json", ".ndjson", ".csv"}
             )
         )
-        target = protected if is_protected else proposed
-        target.append(_item(relative, artifact_class, metadata.st_size))
-        if not is_protected:
-            identities[relative] = _identity(metadata)
+        if is_protected:
+            protected.append(_item(relative, artifact_class, metadata.st_size))
+            return
+        if artifact_class in {"generated_fixture", "provider_temp_output"}:
+            if path.name in RECOGNIZED_DISPOSABLE_LEAVES:
+                proposed.append(_item(relative, artifact_class, metadata.st_size))
+                identities[relative] = _identity(metadata)
+            else:
+                reason = (
+                    "unrecognized_generated_fixture_leaf"
+                    if artifact_class == "generated_fixture"
+                    else "unrecognized_provider_output_leaf"
+                )
+                unknown.append(_item(relative, "unknown", metadata.st_size, reason))
+            return
+        proposed.append(_item(relative, artifact_class, metadata.st_size))
+        identities[relative] = _identity(metadata)
         return
     if not stat.S_ISDIR(metadata.st_mode):
         unknown.append(_item(relative, "unknown", 0, "unsupported_file_type"))
