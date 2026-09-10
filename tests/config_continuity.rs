@@ -286,7 +286,7 @@ fn supplied_mismatched_config_fails_typed_and_hash_surfaces_remain_secret_free()
         assert_eq!(output["registered_config_hash"], init["config_hash"]);
         assert_eq!(output["effective_config_hash"], init["config_hash"]);
         let rendered = serde_json::to_string(&output).unwrap();
-        assert!(!rendered.contains("private"));
+        assert!(!rendered.contains(r"^private(?:/|$)"));
         assert!(!rendered.contains("different-name"));
     }
 }

@@ -1804,7 +1804,7 @@ fn representative_contract_mutations_fail_closed() {
             "missing control evidence for {control}: {stdout}"
         );
     }
-    assert!(stdout.contains("SELF-TEST passed: 81/81 mutations rejected"));
+    assert!(stdout.contains("SELF-TEST passed: 84/84 mutations rejected"));
 }
 
 #[cfg(windows)]
