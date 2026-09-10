@@ -25,14 +25,25 @@ ENVIRONMENT_KEYS = frozenset({
 })
 CSV_COLUMNS = (
     "task_id", "repetition", "arm", "accepted", "accepted_state", "exit_code",
-    "elapsed_ms", "tokens_input", "tokens_output", "tokens_total", "tool_calls",
+    "elapsed_ms", "runner_wall_time_ms", "adapter_elapsed_ms",
+    "tokens_input", "tokens_output", "tokens_total", "tool_calls",
     "files_read", "source_bytes_read", "atlas_route", "atlas_runtime_ms",
-    "context_expansion", "error_kind",
+    "context_expansion", "error_kind", "record_json",
 )
+
+CSV_NULL_TOKEN = "<null>"
+CSV_MISSING_TOKEN = "<missing>"
 HOME_OR_ABSOLUTE = re.compile(
     r"(?:^[A-Za-z]:[\\/]|^/|^\\\\|^~|%(?:USERPROFILE|HOME)%|"
     r"\$(?:HOME|USERPROFILE)|/(?:home|Users)/|[\\/]Users[\\/])",
     re.IGNORECASE,
+)
+
+
+SECRET_VALUE_PATTERN = re.compile(
+    r"(?i)(?:^|[\s,;|])(?:password|passwd|pwd|secret|api[-_]?key|access[-_]?key|"
+    r"credential|auth[-_]?token|bearer|private[-_]?key|token)\s*[:=]\s*[^,;|\s][^,;|]*"
+    r"|(?:bearer|basic)\s+[A-Za-z0-9._~+/=-]{6,}",
 )
 
 
@@ -193,14 +204,25 @@ def _identity_sidecar(
 ) -> tuple[str | None, dict[str, Any] | None]:
     sidecar: Path | None = None
     sidecar_kind = ""
+    raw_shape = False
+    capacity_shape = False
     if source.name == "raw.ndjson":
+        raw_shape = True
         candidate = source.with_name("harness-manifest.json")
         if candidate.exists() or candidate.is_symlink():
             sidecar, sidecar_kind = candidate, "harness"
+        else:
+            return "partial", {
+                "kind": "missing_harness_identity",
+                "name": "harness-manifest.json",
+                "raw_shape": "harness",
+                "record_count": record_count,
+            }
     elif source.name in (
         "capacity-raw-observations-v1.ndjson",
         "test-capacity-raw-observations-v1.ndjson",
     ):
+        capacity_shape = True
         name = (
             "capacity-summary-v1.json"
             if source.name.startswith("capacity-")
@@ -210,9 +232,22 @@ def _identity_sidecar(
         if candidate.exists() or candidate.is_symlink():
             sidecar, sidecar_kind = candidate, "capacity"
         else:
-            return "partial", None
+            return "partial", {
+                "kind": "missing_capacity_identity",
+                "name": name,
+                "raw_shape": "capacity",
+                "record_count": record_count,
+            }
     if sidecar is None:
-        return None, None
+        return (
+            (None, None)
+            if not (raw_shape or capacity_shape)
+            else ("partial", {
+                "kind": "missing_identity_sidecar",
+                "raw_shape": "harness" if raw_shape else "capacity",
+                "record_count": record_count,
+            })
+        )
     _safe_ancestors(sidecar, workspace, False)
     sidecar_bytes = _read_bounded_file(sidecar, MAX_DOCUMENT_BYTES, "identity sidecar")
     try:
@@ -302,9 +337,11 @@ def _counts(records: list[dict[str, Any]]) -> dict[str, int]:
     return {"accepted": accepted, "failed": failed, "records": len(records), "rejected": rejected, "unavailable": unavailable}
 
 
-def _cell(value: Any) -> str:
+def _cell(value: Any, *, missing: bool = False) -> str:
+    if missing and value is __missing__:
+        return CSV_MISSING_TOKEN
     if value is None:
-        return ""
+        return CSV_NULL_TOKEN
     if value is True:
         return "true"
     if value is False:
@@ -314,13 +351,41 @@ def _cell(value: Any) -> str:
     return str(value)
 
 
+class _MissingSentinel:
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return "<missing>"
+
+
+__missing__ = _MissingSentinel()
+
+
+def _or_missing(record: dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        if key in record:
+            return record[key]
+    return __missing__
+
+
 def _sort_value(value: Any) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
 
+
+
+def _csv_record(record: dict[str, Any]) -> str:
+    return json.dumps(
+        record,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+
+
 def _csv_bytes(records: list[dict[str, Any]]) -> bytes:
     output = io.StringIO(newline="")
-    writer = csv.DictWriter(output, fieldnames=CSV_COLUMNS, lineterminator="\n")
+    writer = csv.DictWriter(output, fieldnames=list(CSV_COLUMNS), lineterminator="\n")
     writer.writeheader()
     order = {"off": 0, "on": 1}
     for record in sorted(records, key=lambda row: (
@@ -340,32 +405,47 @@ def _csv_bytes(records: list[dict[str, Any]]) -> bytes:
                 "estimated_tokens": record.get("compiler_selected_estimated_tokens"),
             }
         row = {
-            "task_id": record.get("task_id", record.get("dataset_name")),
-            "repetition": record.get("repetition"), "arm": record.get("arm"),
+            "task_id": _or_missing(record, "task_id", "dataset_name"),
+            "repetition": _or_missing(record, "repetition"),
+            "arm": _or_missing(record, "arm"),
             "accepted": accepted, "accepted_state": accepted_state,
-            "exit_code": record.get("exit_code"),
-            "elapsed_ms": record.get("elapsed_ms", record.get("wall_duration_ms")),
-            "tokens_input": tokens.get("input"), "tokens_output": tokens.get("output"),
-            "tokens_total": tokens.get("total"), "tool_calls": record.get("tool_calls"),
-            "files_read": record.get("files_read"),
-            "source_bytes_read": record.get("source_bytes_read", record.get("source_bytes")),
-            "atlas_route": record.get("atlas_route"),
-            "atlas_runtime_ms": record.get("atlas_runtime_ms", record.get("atlas_runtime_duration_ms")),
-            "context_expansion": context, "error_kind": error.get("kind"),
+            "exit_code": _or_missing(record, "exit_code"),
+            "elapsed_ms": _or_missing(record, "elapsed_ms", "wall_duration_ms"),
+            "runner_wall_time_ms": _or_missing(
+                record, "runner_wall_time_ms", "runner_wall_ms"
+            ),
+            "adapter_elapsed_ms": _or_missing(record, "adapter_elapsed_ms"),
+            "tokens_input": _or_missing(tokens, "input"),
+            "tokens_output": _or_missing(tokens, "output"),
+            "tokens_total": _or_missing(tokens, "total"),
+            "tool_calls": _or_missing(record, "tool_calls"),
+            "files_read": _or_missing(record, "files_read"),
+            "source_bytes_read": _or_missing(record, "source_bytes_read", "source_bytes"),
+            "atlas_route": _or_missing(record, "atlas_route"),
+            "atlas_runtime_ms": _or_missing(record, "atlas_runtime_ms", "atlas_runtime_duration_ms"),
+            "context_expansion": context,
+            "error_kind": error if error else __missing__,
+            "record_json": _csv_record(record),
         }
-        writer.writerow({key: _cell(value) for key, value in row.items()})
+        writer.writerow({key: _cell(value, missing=True) for key, value in row.items()})
     return output.getvalue().encode("utf-8")
 
 
 def _safe_environment_value(value: Any) -> bool:
     if isinstance(value, bool) or isinstance(value, (int, float)):
         return True
-    return bool(
-        isinstance(value, str)
-        and len(value.encode("utf-8")) <= 512
-        and not any(ord(character) < 32 for character in value)
-        and not HOME_OR_ABSOLUTE.search(value)
-    )
+    if not isinstance(value, str):
+        return False
+    encoded = value.encode("utf-8")
+    if len(encoded) > 512:
+        return False
+    if any(ord(character) < 32 for character in value):
+        return False
+    if HOME_OR_ABSOLUTE.search(value):
+        return False
+    if SECRET_VALUE_PATTERN.search(value):
+        return False
+    return True
 
 
 def _environment(path: Path | None) -> dict[str, Any]:
@@ -409,9 +489,31 @@ def _write_exclusive(path: Path, data: bytes) -> tuple[int, int, int, int]:
         raise ExportError(f"bundle output already exists: {path.name}") from error
 
 
+def _missing_provenance(
+    source_name: str, identity: dict[str, Any] | None, record_count: int, state: str,
+) -> list[str]:
+    missing: list[str] = []
+    if identity is None:
+        missing.append("identity_sidecar")
+    if isinstance(identity, dict):
+        kind = identity.get("kind")
+        if kind == "missing_harness_identity":
+            missing.extend(["harness_identity", "harness_expected_count", "harness_pairing"])
+        elif kind == "missing_capacity_identity":
+            missing.append("capacity_identity")
+        elif kind and kind != "harness" and kind != "capacity":
+            missing.append("identity_pairing")
+    if state == "partial" and source_name == "raw.ndjson":
+        if identity is None or (isinstance(identity, dict) and identity.get("name") != "harness-manifest.json"):
+            if "harness_expected_count" not in missing:
+                missing.append("harness_expected_count")
+    if record_count == 0:
+        missing.append("record_count")
+    return sorted(set(missing))
+
+
 def export(workspace: Path, source: Path, destination: Path, environment_path: Path | None) -> dict[str, Any]:
     workspace = workspace.absolute()
-    _safe_metadata(workspace, "workspace", "directory")
     source = _contained(source, workspace, "input")
     destination = _contained(destination, workspace, "destination")
     _safe_ancestors(source, workspace, False)
@@ -437,11 +539,13 @@ def export(workspace: Path, source: Path, destination: Path, environment_path: P
         "summary.json": _canonical_bytes({"counts": counts, "schema_version": SCHEMA_VERSION, "state": state}),
         "results.csv": _csv_bytes(records),
     }
+    missing_provenance = _missing_provenance(source.name, identity, len(records), state)
     manifest: dict[str, Any] = {
         "bundle_schema_version": SCHEMA_VERSION,
         "counts": counts,
         "files": {name: {"bytes": len(data), "sha256": _hash(data)} for name, data in sorted(payloads.items())},
         "input": {"bytes": len(raw_input), "format": input_format, "name": source.name, "sha256": _hash(raw_input)},
+        "missing_provenance": missing_provenance,
         "source_schema_versions": schemas,
         "state": state,
     }

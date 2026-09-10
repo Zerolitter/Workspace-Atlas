@@ -52,7 +52,18 @@ class BenchmarkEvidenceExportTests(unittest.TestCase):
                 "error": {"kind": "runner_exit", "detail": None},
             },
         ]
-        self.source.write_text("".join(json.dumps(row) + "\n" for row in records), encoding="utf-8", newline="\n")
+        payload = "".join(json.dumps(row) + "\n" for row in records)
+        self.source.write_text(payload, encoding="utf-8", newline="\n")
+        manifest = {
+            "schema_version": "1.0.0",
+            "raw_sha256": hashlib.sha256(payload.encode("utf-8")).hexdigest(),
+            "raw_count": len(records),
+            "expected_raw_count": len(records),
+            "state": "complete",
+        }
+        (self.workspace / "harness-manifest.json").write_text(
+            json.dumps(manifest), encoding="utf-8"
+        )
         return records
 
     def test_exports_stable_bound_bundle_without_mutating_input(self) -> None:
@@ -82,7 +93,7 @@ class BenchmarkEvidenceExportTests(unittest.TestCase):
         csv_rows = list(csv.DictReader(io.StringIO((self.destination / "results.csv").read_text(encoding="utf-8"))))
         self.assertEqual([(row["task_id"], row["arm"]) for row in csv_rows], [("task-a", "off"), ("task-b", "on")])
         self.assertEqual(csv_rows[0]["accepted"], "false")
-        self.assertEqual(csv_rows[1]["accepted"], "")
+        self.assertEqual(csv_rows[1]["accepted"], "<null>")
         for path in self.destination.iterdir():
             self.assertTrue(path.read_bytes().endswith(b"\n"))
 
@@ -230,6 +241,131 @@ class BenchmarkEvidenceExportTests(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(self.destination.exists())
+
+    def test_environment_omits_obvious_secret_bearing_allowlisted_values(self) -> None:
+        self.source.write_text("{}\n", encoding="utf-8")
+        environment = self.workspace / "environment-input.json"
+        environment.write_text(
+            json.dumps(
+                {
+                    "atlas_version": "password=hunter2",
+                    "toolchain": "stable",
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT),
+                "--workspace",
+                str(self.workspace),
+                "--input",
+                str(self.source),
+                "--destination",
+                str(self.destination),
+                "--environment",
+                str(environment),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        exported = (self.destination / "environment.json").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn("password=hunter2", exported)
+        self.assertEqual(
+            json.loads(exported)["allowlisted"],
+            {"toolchain": "stable"},
+        )
+
+    def test_harness_shaped_raw_without_manifest_is_partial_with_missing_provenance(
+        self,
+    ) -> None:
+        self.source.write_text(
+            json.dumps(
+                {
+                    "schema_version": "1.0.0",
+                    "kind": "local-atlas-ab-observation",
+                    "task_id": "task-a",
+                    "repetition": 1,
+                    "arm": "off",
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        result = self.run_export()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        manifest = json.loads(
+            (self.destination / "manifest.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(manifest["state"], "partial")
+        self.assertEqual(
+            manifest["missing_provenance"],
+            sorted([
+                "harness_identity",
+                "harness_expected_count",
+                "harness_pairing",
+            ]),
+        )
+
+    def test_csv_record_json_preserves_failure_unknown_and_null_vs_missing(
+        self,
+    ) -> None:
+        records = [
+            {
+                "schema_version": "1.0.0",
+                "kind": "local-atlas-ab-observation",
+                "task_id": "task-a",
+                "repetition": 1,
+                "arm": "off",
+                "error": {
+                    "kind": "runner_exit",
+                    "detail": {"message": "specific failure", "code": 17},
+                },
+                "known_null": None,
+                "unknown_extension": {"nested": [1, None, {"x": False}]},
+            },
+            {
+                "schema_version": "1.0.0",
+                "kind": "local-atlas-ab-observation",
+                "task_id": "task-a",
+                "repetition": 1,
+                "arm": "on",
+            },
+        ]
+        self.source.write_text(
+            "".join(
+                json.dumps(record, sort_keys=True) + "\n" for record in records
+            ),
+            encoding="utf-8",
+        )
+
+        result = self.run_export()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        rows = list(
+            csv.DictReader(
+                io.StringIO(
+                    (self.destination / "results.csv").read_text(
+                        encoding="utf-8"
+                    )
+                )
+            )
+        )
+        self.assertEqual(
+            [json.loads(row["record_json"]) for row in rows],
+            records,
+        )
+        self.assertIsNone(json.loads(rows[0]["record_json"])["known_null"])
+        self.assertNotIn("known_null", json.loads(rows[1]["record_json"]))
 
 
 if __name__ == "__main__":
