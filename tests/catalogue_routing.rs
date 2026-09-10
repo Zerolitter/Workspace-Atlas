@@ -971,7 +971,7 @@ fn main_replacement_after_quiescence_check_fails_without_scanner_effects() {
     assert!(error.contains("--catalogue"), "{error}");
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "macos")))]
 #[test]
 fn init_rejects_non_unicode_canonical_workspace_root() {
     use std::os::unix::ffi::OsStringExt;
