@@ -1,0 +1,106 @@
+# Local testing and benchmark evidence
+
+These dependency-free Python tools are checkout-local operator utilities. They do not
+change Atlas CLI, MCP, routing, or Rust benchmark contracts. Run them from the
+repository root with Python 3.
+
+## Audit disposable development artifacts
+
+Preview the exact files eligible for removal:
+
+```sh
+python scripts/local-artifact-cleanup.py --workspace .
+```
+
+The JSON report is deterministic and separates `proposed`, `deleted`, `protected`,
+and `unknown` paths with byte counts and artifact classes. Preview is the default;
+removal requires the explicit `--apply` flag. The fixed candidates are Cargo
+`target/debug`, `target/release`, and `target/doc` outputs, generated fixture roots,
+and provider temporary/output roots. A benchmark scratch directory is eligible only
+when explicitly supplied as a workspace-relative path:
+
+```sh
+python scripts/local-artifact-cleanup.py --workspace . \
+  --benchmark-scratch .local-atlas-scratch --apply
+```
+
+The tool never runs `cargo clean` or removes the whole `target` directory. Links,
+reparse points, containment escapes, unclassified `target` content, raw observations,
+manifests, accepted-outcome records, evidence, portable bundles, results CSV files,
+and directories containing `.atlas-preserve` are not deleted. Review `unknown` and
+`protected` entries manually; do not reinterpret them as cleanup authorization.
+
+## Run a bounded local Atlas OFF/ON comparison
+
+Start from [`local-ab-example-tasks.json`](../scripts/local-ab-example-tasks.json) and
+create an operator-local adapter JSON:
+
+```json
+{
+  "schema_version": "1.0.0",
+  "adapter": "json-stdio",
+  "model": "operator-local-model",
+  "command": ["local-runner", "--json-stdio"]
+}
+```
+
+Do not put credentials in the adapter command. The harness stores an exact SHA-256
+identity for the command, adapter, and model, but only a sanitized command display.
+It invokes the command directly, never through a shell. For each explicitly selected
+task and repetition it runs `off` and then `on`, with a separate arm directory and
+`ATLAS_ENABLED` set to `0` or `1` respectively:
+
+```sh
+python scripts/local-atlas-ab.py --workspace . \
+  --tasks scripts/local-ab-example-tasks.json \
+  --adapter config/local-adapter.json \
+  --destination .local-atlas-runs/campaign-001 \
+  --task inspect-route --repetitions 1 --timeout 300
+```
+
+Task count, repetitions, input/output sizes, and per-arm timeout are bounded. The
+runner receives one JSON request on stdin with `schema_version`, `task_id`, `prompt`,
+`repetition`, and `arm`, and returns one JSON object on stdout. Supported observation
+fields are:
+
+- `accepted_outcome`: `{ "accepted": true|false|null, "state": "..." }`
+- `elapsed_ms`
+- `tokens`: `input`, `output`, and `total`
+- `tool_calls`, `files_read`, and `source_bytes_read`
+- `atlas_route`, `atlas_runtime_ms`, and `context_expansion`
+
+Missing measurements remain JSON `null`; they are never inferred. Process exit zero
+does not imply acceptance. Timeout, non-zero exit, oversized output, and malformed
+output remain explicit unavailable/failure observations. The campaign writes
+`raw.ndjson`, `harness-manifest.json`, and a sanitized `result.json` in each isolated
+arm directory. It makes no network or model selection decision; the operator supplies
+the local command.
+
+## Export a portable evidence bundle
+
+Export Atlas JSON or NDJSON observations without modifying the input:
+
+```sh
+python scripts/benchmark-evidence-export.py --workspace . \
+  --input .local-atlas-runs/campaign-001/raw.ndjson \
+  --destination .local-atlas-runs/campaign-001-bundle
+```
+
+The destination must be new, workspace-contained, and free of link/reparse ambiguity.
+The exporter rejects malformed input, duplicate JSON fields, count mismatches, existing
+destinations, and containment escapes. It preserves failures, nulls, and unknown fields
+in the raw payload. `environment.json` contains only fixed host fields and an optional
+sanitized allowlist from `--environment`; it never dumps the environment or emits home
+paths.
+
+Every bundle contains exactly:
+
+- `manifest.json`: bundle/input schemas and identity, hashes, byte counts, record
+  counts, source schema versions, and partial/complete state
+- `environment.json`: allowlisted, sanitized environment identity
+- `raw.json`: lossless parsed observation objects
+- `summary.json`: accepted, rejected, unavailable, failure, and total counts
+- `results.csv`: stable columns and task/repetition/OFF-before-ON ordering
+
+All text files use stable UTF-8 LF newlines. Bundle creation is exclusive: rerunning
+requires a new destination rather than overwriting accepted evidence.
