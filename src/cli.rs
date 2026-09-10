@@ -3613,8 +3613,8 @@ mod tests {
         let db_dir = tempfile::tempdir().unwrap();
         let ws_dir = tempfile::tempdir().unwrap();
         let ws_root = canonical_tempdir_path(&ws_dir);
-        std::fs::create_dir_all(&ws_root.join("src")).unwrap();
-        std::fs::write(&ws_root.join("src/a.ts"), "export const a = 1;\n").unwrap();
+        std::fs::create_dir_all(ws_root.join("src")).unwrap();
+        std::fs::write(ws_root.join("src/a.ts"), "export const a = 1;\n").unwrap();
 
         let cfg = Config::parse("schema_version = \"1.0.0\"\n[workspace]\ndisplay_name = \"t\"\n")
             .unwrap();
@@ -3728,8 +3728,8 @@ mod tests {
         let db_dir = tempfile::tempdir().unwrap();
         let ws_dir = tempfile::tempdir().unwrap();
         let ws_root = canonical_tempdir_path(&ws_dir);
-        std::fs::create_dir_all(&ws_root.join("src")).unwrap();
-        std::fs::write(&ws_root.join("src/a.ts"), "export const a = 1;\n").unwrap();
+        std::fs::create_dir_all(ws_root.join("src")).unwrap();
+        std::fs::write(ws_root.join("src/a.ts"), "export const a = 1;\n").unwrap();
         let cfg = Config::parse("schema_version = \"1.0.0\"\n[workspace]\ndisplay_name = \"t\"\n")
             .unwrap();
         let db_path = db_dir.path().join("atlas.sqlite");
@@ -3766,8 +3766,8 @@ mod tests {
         let db_dir = tempfile::tempdir().unwrap();
         let ws_dir = tempfile::tempdir().unwrap();
         let ws_root = canonical_tempdir_path(&ws_dir);
-        std::fs::create_dir_all(&ws_root.join("src")).unwrap();
-        std::fs::write(&ws_root.join("src/a.ts"), "export const a = 1;\n").unwrap();
+        std::fs::create_dir_all(ws_root.join("src")).unwrap();
+        std::fs::write(ws_root.join("src/a.ts"), "export const a = 1;\n").unwrap();
         let cfg = Config::parse("schema_version = \"1.0.0\"\n[workspace]\ndisplay_name = \"t\"\n")
             .unwrap();
         let db_path = db_dir.path().join("atlas.sqlite");
@@ -3803,8 +3803,8 @@ mod tests {
         let db_dir = tempfile::tempdir().unwrap();
         let ws_dir = tempfile::tempdir().unwrap();
         let ws_root = canonical_tempdir_path(&ws_dir);
-        std::fs::create_dir_all(&ws_root.join("src")).unwrap();
-        std::fs::write(&ws_root.join("src/a.ts"), "export const a = 1;\n").unwrap();
+        std::fs::create_dir_all(ws_root.join("src")).unwrap();
+        std::fs::write(ws_root.join("src/a.ts"), "export const a = 1;\n").unwrap();
         let cfg = Config::parse("schema_version = \"1.0.0\"\n[workspace]\ndisplay_name = \"t\"\n")
             .unwrap();
         let db_path = db_dir.path().join("atlas.sqlite");
@@ -3834,8 +3834,8 @@ mod tests {
         let db_dir = tempfile::tempdir().unwrap();
         let ws_dir = tempfile::tempdir().unwrap();
         let ws_root = canonical_tempdir_path(&ws_dir);
-        std::fs::create_dir_all(&ws_root.join("src")).unwrap();
-        std::fs::write(&ws_root.join("src/a.ts"), "export const a = 1;\n").unwrap();
+        std::fs::create_dir_all(ws_root.join("src")).unwrap();
+        std::fs::write(ws_root.join("src/a.ts"), "export const a = 1;\n").unwrap();
         let cfg = Config::parse("schema_version = \"1.0.0\"\n[workspace]\ndisplay_name = \"t\"\n")
             .unwrap();
         let db_path = db_dir.path().join("atlas.sqlite");
@@ -3859,9 +3859,9 @@ mod tests {
         let db_dir = tempfile::tempdir().unwrap();
         let ws_dir = tempfile::tempdir().unwrap();
         let ws_root = canonical_tempdir_path(&ws_dir);
-        std::fs::create_dir_all(&ws_root.join("src")).unwrap();
+        std::fs::create_dir_all(ws_root.join("src")).unwrap();
         std::fs::write(
-            &ws_root.join("src/a.ts"),
+            ws_root.join("src/a.ts"),
             "export function alpha() { return 1; }\n",
         )
         .unwrap();
@@ -3957,8 +3957,8 @@ mod tests {
         let db_dir = tempfile::tempdir().unwrap();
         let ws_dir = tempfile::tempdir().unwrap();
         let ws_root = canonical_tempdir_path(&ws_dir);
-        std::fs::create_dir_all(&ws_root.join("src")).unwrap();
-        std::fs::write(&ws_root.join("src/a.ts"), source).unwrap();
+        std::fs::create_dir_all(ws_root.join("src")).unwrap();
+        std::fs::write(ws_root.join("src/a.ts"), source).unwrap();
         let cfg = Config::parse("schema_version = \"1.0.0\"\n[workspace]\ndisplay_name = \"t\"\n")
             .unwrap();
         let db_path = db_dir.path().join("atlas.sqlite");
@@ -4116,7 +4116,7 @@ mod tests {
         let db_dir = tempfile::tempdir().unwrap();
         let ws_dir = tempfile::tempdir().unwrap();
         let ws_root = canonical_tempdir_path(&ws_dir);
-        std::fs::write(&ws_root.join("a.ts"), "export const a = 1;\n").unwrap();
+        std::fs::write(ws_root.join("a.ts"), "export const a = 1;\n").unwrap();
         let cfg = Config::parse("schema_version = \"1.0.0\"\n[workspace]\ndisplay_name = \"t\"\n")
             .unwrap();
         let db_path = db_dir.path().join("atlas.sqlite");
@@ -4152,9 +4152,9 @@ mod tests {
         let db_dir = tempfile::tempdir().unwrap();
         let ws_dir = tempfile::tempdir().unwrap();
         let ws_root = canonical_tempdir_path(&ws_dir);
-        std::fs::create_dir_all(&ws_root.join("src")).unwrap();
+        std::fs::create_dir_all(ws_root.join("src")).unwrap();
         std::fs::write(
-            &ws_root.join("src/a.ts"),
+            ws_root.join("src/a.ts"),
             "export function alpha() { return 1; }\n",
         )
         .unwrap();
@@ -4190,9 +4190,9 @@ mod tests {
         let db_dir = tempfile::tempdir().unwrap();
         let ws_dir = tempfile::tempdir().unwrap();
         let ws_root = canonical_tempdir_path(&ws_dir);
-        std::fs::create_dir_all(&ws_root.join("src")).unwrap();
+        std::fs::create_dir_all(ws_root.join("src")).unwrap();
         std::fs::write(
-            &ws_root.join("src/a.ts"),
+            ws_root.join("src/a.ts"),
             "export function alpha() { return 1; }\n",
         )
         .unwrap();
@@ -4214,9 +4214,9 @@ mod tests {
         let db_dir = tempfile::tempdir().unwrap();
         let ws_dir = tempfile::tempdir().unwrap();
         let ws_root = canonical_tempdir_path(&ws_dir);
-        std::fs::create_dir_all(&ws_root.join("src")).unwrap();
+        std::fs::create_dir_all(ws_root.join("src")).unwrap();
         std::fs::write(
-            &ws_root.join("src/a.ts"),
+            ws_root.join("src/a.ts"),
             "export function alpha() { return 1; }\n",
         )
         .unwrap();
@@ -4230,7 +4230,7 @@ mod tests {
             .candidate_generation_id;
 
         std::fs::write(
-            &ws_root.join("src/b.ts"),
+            ws_root.join("src/b.ts"),
             "export function beta() { return 2; }\n",
         )
         .unwrap();
@@ -4263,8 +4263,8 @@ mod tests {
         let db_dir = tempfile::tempdir().unwrap();
         let ws_dir = tempfile::tempdir().unwrap();
         let ws_root = canonical_tempdir_path(&ws_dir);
-        std::fs::create_dir_all(&ws_root.join("src")).unwrap();
-        std::fs::write(&ws_root.join("src/a.ts"), "export const a = 1;\n").unwrap();
+        std::fs::create_dir_all(ws_root.join("src")).unwrap();
+        std::fs::write(ws_root.join("src/a.ts"), "export const a = 1;\n").unwrap();
         let cfg = Config::parse("schema_version = \"1.0.0\"\n[workspace]\ndisplay_name = \"t\"\n")
             .unwrap();
         let db_path = db_dir.path().join("atlas.sqlite");
