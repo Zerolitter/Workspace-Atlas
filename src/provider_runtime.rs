@@ -1895,6 +1895,64 @@ mod tests {
         );
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn windows_npm_shim_preserves_argument_boundaries_without_a_shell() {
+        let dir = tempfile::tempdir().unwrap();
+        let marker = dir.path().join("arguments.json");
+        std::fs::write(
+            dir.path().join("provider.cmd"),
+            "@ECHO off\r\nnode \"%dp0%\\payload.js\" %*\r\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("payload.js"),
+            "require('fs').writeFileSync(process.argv[2], JSON.stringify(process.argv.slice(3)));",
+        )
+        .unwrap();
+        let child_path = format!(
+            "{};{}",
+            dir.path().display(),
+            std::env::var("PATH").expect("test requires the installed node PATH")
+        );
+        let expected = vec![
+            "first value".to_string(),
+            "x&echo not-a-command".to_string(),
+            "\"quoted\"".to_string(),
+        ];
+        let plan = SpawnPlan {
+            command: "provider".to_string(),
+            arguments: std::iter::once(marker.to_string_lossy().into_owned())
+                .chain(expected.iter().cloned())
+                .collect(),
+            cwd: dir.path().to_path_buf(),
+            environment: vec![
+                ("PATH".to_string(), child_path),
+                ("PATHEXT".to_string(), ".CMD;.EXE".to_string()),
+                (
+                    "SYSTEMROOT".to_string(),
+                    std::env::var("SYSTEMROOT").expect("Windows requires SYSTEMROOT"),
+                ),
+            ],
+            timeout: Duration::from_secs(5),
+            graceful_cancel: Duration::from_millis(100),
+            max_stdout_bytes: 1024,
+            max_stderr_bytes: 1024,
+        };
+
+        let outcome = spawn_and_wait(&plan, &AtomicBool::new(false)).unwrap();
+        assert!(matches!(
+            outcome,
+            SpawnOutcome::Exited {
+                exit_code: Some(0),
+                ..
+            }
+        ));
+        let observed: Vec<String> =
+            serde_json::from_slice(&std::fs::read(marker).unwrap()).unwrap();
+        assert_eq!(observed, expected);
+    }
+
     #[test]
     fn probe_provider_available_for_python_version_check() {
         let dir = tempfile::tempdir().unwrap();
