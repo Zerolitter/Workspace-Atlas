@@ -30,8 +30,8 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 MAX_OUTPUT = 1_048_576
 MAX_ARCHIVE_BYTES = 64 * 1_048_576
 MAX_ARCHIVE_EXPANDED_BYTES = 64 * 1_048_576
-EXPECTED_WORKFLOW_SHA256 = "3183234a0eac8b4f19d551f2e22813ba10646a4b940e0e8aa655c35b61d253af"
-EXPECTED_QUALITY_WORKFLOW_SHA256 = "2128987b46a4583355de8218287fd9396db72009538fd3dfc3cf1f29f0e1fe97"
+EXPECTED_WORKFLOW_SHA256 = "b5060db2858c8b31c2a9fa8f62b27ec1d2ece88732d3bc0be1451904644353d8"
+EXPECTED_QUALITY_WORKFLOW_SHA256 = "ef82bce0fb53632aaf7851ffa5cd4640422a6aeb632984e0c1f89e01f30f7fac"
 EXPECTED_GITATTRIBUTES = b"* text=auto\n\n*.rs text eol=lf\n*.toml text eol=lf\n*.md text eol=lf\n*.sql text eol=lf\n*.json text eol=lf\n*.jsonl text eol=lf\n*.yml text eol=lf\n*.yaml text eol=lf\n*.py text eol=lf\n*.ts text eol=lf\n*.tsx text eol=lf\n*.js text eol=lf\n*.jsx text eol=lf\nLICENSE text eol=lf\n\n*.png binary\n*.jpg binary\n*.jpeg binary\n*.gif binary\n*.webp binary\n*.sqlite binary\n*.scip binary\n*.zip binary\n*.7z binary\n"
 TIMEOUT_SECONDS = 180
 BASELINE_PACKAGE_PATHS = (
@@ -797,10 +797,29 @@ def check_workflow(sources: Sources) -> tuple[CheckResult, CheckResult, CheckRes
     focused = require_workflow_command(steps, "cargo test --locked --test config_privacy", "DR-LIFECYCLE")
     for token in lifecycle_tokens:
         require(token in focused[2], "DR-LIFECYCLE", f"accepted lifecycle/module suite omitted: {token}")
+    require(
+        not any(step[2] == "cargo test --locked" for step in steps),
+        "DR-LIFECYCLE",
+        "accepted-module evidence must not duplicate the quality matrix full locked suite",
+    )
+    quality_steps = parsed_steps[".github/workflows/quality.yml"]
+    full_suite = require_workflow_command(quality_steps, "cargo test --locked", "DR-LIFECYCLE")
+    require(full_suite[0] == "rust-quality", "DR-LIFECYCLE",
+            "quality matrix must own the full locked suite")
+    rust_quality_install = require_workflow_command(
+        quality_steps, "rustup toolchain install '${{ matrix.rust }}'", "DR-LIFECYCLE"
+    )
+    require(
+        rust_quality_install[0] == "rust-quality"
+        and "--component rust-analyzer" in rust_quality_install[2]
+        and "rustup which --toolchain '${{ matrix.rust }}' rust-analyzer"
+        in rust_quality_install[2],
+        "DR-LIFECYCLE",
+        "quality full-suite job must provision and directly expose rust-analyzer",
+    )
     for command in (
         "cargo fmt --all -- --check",
         "cargo clippy --all-targets --all-features --locked -- -D warnings",
-        "cargo test --locked",
         "python -m unittest scripts/test_check_public_hygiene.py",
         "python scripts/check-public-hygiene.py",
         "python scripts/provider-smoke.py --self-test",
@@ -1641,6 +1660,35 @@ def run_self_test(sources: Sources) -> list[str]:
          lambda value: value.files.__setitem__(".github/workflows/distribution-readiness.yml", value.files[".github/workflows/distribution-readiness.yml"].replace("    runs-on:", "    if: ${{ false }}\n    runs-on:"))),
         ("workflow-required-step-disabled", "DR-NO-PUBLISH",
          lambda value: value.files.__setitem__(".github/workflows/distribution-readiness.yml", value.files[".github/workflows/distribution-readiness.yml"].replace("      - name: Checker mutation tests\n", "      - name: Checker mutation tests\n        if: ${{ false }}\n", 1))),
+        ("accepted-module-full-suite-duplicated", "DR-LIFECYCLE",
+         lambda value: value.files.__setitem__(
+             ".github/workflows/distribution-readiness.yml",
+             value.files[".github/workflows/distribution-readiness.yml"].replace(
+                 "      - name: Public hygiene unit tests\n",
+                 "      - name: Full locked suite\n"
+                 "        run: cargo test --locked\n"
+                 "      - name: Public hygiene unit tests\n",
+                 1,
+             ),
+         )),
+        ("quality-full-suite-removed", "DR-LIFECYCLE",
+         lambda value: value.files.__setitem__(
+             ".github/workflows/quality.yml",
+             value.files[".github/workflows/quality.yml"].replace(
+                 "        run: cargo test --locked\n",
+                 "        run: cargo test --locked --test config_privacy\n",
+                 1,
+             ),
+         )),
+        ("quality-rust-analyzer-removed", "DR-LIFECYCLE",
+         lambda value: value.files.__setitem__(
+             ".github/workflows/quality.yml",
+             value.files[".github/workflows/quality.yml"].replace(
+                 " --component clippy --component rust-analyzer",
+                 " --component clippy",
+                 1,
+             ),
+         )),
         ("compatibility-projection-duplicate", "DR-COMPATIBILITY",
          lambda value: value.files.__setitem__("tests/fixtures/context_route/decision-v1.example.json", value.files["tests/fixtures/context_route/decision-v1.example.json"].replace('"projection_version": "projection-v2.0.0"', '"projection_version": "projection-v9.0.0"'))),
         ("compatibility-estimator-duplicate", "DR-COMPATIBILITY",

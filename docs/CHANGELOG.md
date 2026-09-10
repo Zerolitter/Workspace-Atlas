@@ -2,10 +2,10 @@
 
 This changelog records crate releases and capability compatibility separately.
 
-## [2.0.0] release candidate - 2026-09-10
+## [2.0.0] - 2026-09-10
 
 ### Added
-- The first Workspace Atlas release candidate, including the local
+- The first public, source-first Workspace Atlas release, including the local
   `atlas` CLI, stdio `atlas-mcp` adapter, and retained `atlas-bench`
   qualification tool.
 

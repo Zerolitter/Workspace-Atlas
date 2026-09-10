@@ -5,17 +5,23 @@ use workspace_atlas::config::Config;
 use workspace_atlas::discovery;
 use workspace_atlas::workspace::register_workspace;
 
-fn fixture() -> (tempfile::TempDir, tempfile::TempDir, std::path::PathBuf) {
+fn fixture() -> (
+    tempfile::TempDir,
+    tempfile::TempDir,
+    std::path::PathBuf,
+    std::path::PathBuf,
+) {
     let database_directory = tempfile::tempdir().unwrap();
     let workspace_directory = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(workspace_directory.path().join("src")).unwrap();
+    let workspace_root = workspace_directory.path().canonicalize().unwrap();
+    std::fs::create_dir_all(workspace_root.join("src")).unwrap();
     std::fs::write(
-        workspace_directory.path().join("src/a.ts"),
+        workspace_root.join("src/a.ts"),
         "export function alpha() { return 1; }\n",
     )
     .unwrap();
     std::fs::write(
-        workspace_directory.path().join("src/b.ts"),
+        workspace_root.join("src/b.ts"),
         "export function beta() { return 2; }\n",
     )
     .unwrap();
@@ -27,7 +33,7 @@ fn fixture() -> (tempfile::TempDir, tempfile::TempDir, std::path::PathBuf) {
     let connection = init_catalogue(&database_path, &config).unwrap();
     let workspace = register_workspace(
         &connection,
-        workspace_directory.path(),
+        &workspace_root,
         &config,
         &database_path,
         "1.0.0",
@@ -96,7 +102,12 @@ fn fixture() -> (tempfile::TempDir, tempfile::TempDir, std::path::PathBuf) {
         .unwrap();
     drop(connection);
 
-    (database_directory, workspace_directory, database_path)
+    (
+        database_directory,
+        workspace_directory,
+        workspace_root,
+        database_path,
+    )
 }
 
 fn run_cli_context_ir(
@@ -162,29 +173,17 @@ fn run_mcp_context_ir(
 
 #[test]
 fn cli_and_mcp_compile_identical_explainable_context() {
-    let (_database_directory, workspace_directory, database_path) = fixture();
+    let (_database_directory, _workspace_directory, workspace_root, database_path) = fixture();
     let task = "improve capitalization metadata semantics";
 
-    let cli_output = run_cli_context_ir(
-        workspace_directory.path(),
-        &database_path,
-        task,
-        &["alpha"],
-        None,
-    );
+    let cli_output = run_cli_context_ir(&workspace_root, &database_path, task, &["alpha"], None);
     assert!(
         cli_output.status.success(),
         "atlas failed: {}",
         String::from_utf8_lossy(&cli_output.stderr)
     );
     let cli: Value = serde_json::from_slice(&cli_output.stdout).unwrap();
-    let mcp = run_mcp_context_ir(
-        workspace_directory.path(),
-        &database_path,
-        task,
-        &["alpha"],
-        None,
-    );
+    let mcp = run_mcp_context_ir(&workspace_root, &database_path, task, &["alpha"], None);
     let mcp_content = &mcp["result"]["structuredContent"];
 
     assert_eq!(cli, *mcp_content);
@@ -216,18 +215,18 @@ fn cli_and_mcp_compile_identical_explainable_context() {
 
 #[test]
 fn equivalent_seed_order_and_duplicates_are_transport_stable() {
-    let (_database_directory, workspace_directory, database_path) = fixture();
+    let (_database_directory, _workspace_directory, workspace_root, database_path) = fixture();
     let task = "explore the public symbols";
 
     let first_output = run_cli_context_ir(
-        workspace_directory.path(),
+        &workspace_root,
         &database_path,
         task,
         &["beta", "alpha"],
         None,
     );
     let second_output = run_cli_context_ir(
-        workspace_directory.path(),
+        &workspace_root,
         &database_path,
         task,
         &["alpha", "beta", "alpha"],
@@ -254,16 +253,16 @@ fn equivalent_seed_order_and_duplicates_are_transport_stable() {
 
 #[test]
 fn different_task_intents_receive_different_required_evidence() {
-    let (_database_directory, workspace_directory, database_path) = fixture();
+    let (_database_directory, _workspace_directory, workspace_root, database_path) = fixture();
     let bug_fix_output = run_cli_context_ir(
-        workspace_directory.path(),
+        &workspace_root,
         &database_path,
         "fix alpha behavior",
         &["alpha"],
         None,
     );
     let explore_output = run_cli_context_ir(
-        workspace_directory.path(),
+        &workspace_root,
         &database_path,
         "explore alpha behavior",
         &["alpha"],
@@ -290,9 +289,9 @@ fn different_task_intents_receive_different_required_evidence() {
 
 #[test]
 fn negative_budgets_fail_closed_on_cli_and_mcp() {
-    let (_database_directory, workspace_directory, database_path) = fixture();
+    let (_database_directory, _workspace_directory, workspace_root, database_path) = fixture();
     let cli = run_cli_context_ir(
-        workspace_directory.path(),
+        &workspace_root,
         &database_path,
         "explore alpha",
         &["alpha"],
@@ -302,7 +301,7 @@ fn negative_budgets_fail_closed_on_cli_and_mcp() {
     assert!(String::from_utf8_lossy(&cli.stderr).contains("max_records must be > 0"));
 
     let mcp = run_mcp_context_ir(
-        workspace_directory.path(),
+        &workspace_root,
         &database_path,
         "explore alpha",
         &["alpha"],

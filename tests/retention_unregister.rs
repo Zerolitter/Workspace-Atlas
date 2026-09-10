@@ -27,11 +27,21 @@ struct Fixture {
 
 fn new_fixture() -> Fixture {
     let temp = tempfile::tempdir().unwrap();
+    let atlas_dir = temp.path().join("atlas");
+    fs::create_dir_all(&atlas_dir).unwrap();
     let root = temp.path().join("workspace");
     fs::create_dir_all(&root).unwrap();
     fs::write(root.join("source.rs"), "pub fn truth() {}\n").unwrap();
-    let root = fs::canonicalize(root).unwrap();
-    let catalogue = temp.path().join("atlas").join("catalogue.sqlite");
+    let root = fs::canonicalize(&root).unwrap();
+    // Canonicalize the catalogue directory before joining so the on-disk path
+    // matches what `validated_unregister_manifest` will canonicalize through
+    // `canonical_regular_file`. On macOS, `tempfile::tempdir()` can return a
+    // symlink-backed lexical path whose canonical spelling differs, and
+    // `paths_have_same_identity` does not bridge that alias. Persisting the
+    // canonical spelling into the locator JSON keeps the fixture aligned with
+    // production semantics.
+    let canonical_atlas_dir = fs::canonicalize(&atlas_dir).unwrap();
+    let catalogue = canonical_atlas_dir.join("catalogue.sqlite");
     let config = Config::parse(
         "schema_version = \"1.0.0\"\n[workspace]\ndisplay_name = \"Retention Fixture\"\n",
     )

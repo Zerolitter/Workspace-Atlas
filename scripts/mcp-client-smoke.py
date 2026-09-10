@@ -37,6 +37,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MATRIX_PATH = ROOT / "config" / "mcp-client-matrix.toml"
 MAX_OUTPUT = 1_048_576
 TIMEOUT = 120
+INSTALL_TIMEOUT = 300
 SECRET_NAMES = ("API_KEY", "TOKEN", "PASSWORD", "SECRET", "CREDENTIAL", "AUTH")
 MAX_DOWNLOAD = 536_870_912
 REGISTRY_ORIGIN = "https://registry.npmjs.org"
@@ -736,7 +737,7 @@ def install_verified(kind: str, root: Path) -> dict[str, Any]:
     run([
         "npm", "install", "--prefix", str(prefix), "--omit=optional", "--ignore-scripts",
         "--no-audit", "--no-fund", "--no-package-lock", "--no-save",
-    ], env=environment, cwd=prefix, timeout=TIMEOUT)
+    ], env=environment, cwd=prefix, timeout=INSTALL_TIMEOUT)
     installed = prefix / "node_modules" / Path(*expected[0].split("/")) / "package.json"
     installed_manifest = json.loads(installed.read_text(encoding="utf-8"))
     if (installed_manifest.get("name"), installed_manifest.get("version")) != expected[:2]:

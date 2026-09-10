@@ -142,6 +142,8 @@ pub fn spawn_and_wait(plan: &SpawnPlan, cancel: &AtomicBool) -> Result<SpawnOutc
     };
     #[cfg(not(windows))]
     let mut command = Command::new(&plan.command);
+    // On Windows these caller arguments follow the validated `node <script>`
+    // prefix; the loop is intentionally cross-platform and preserves argv boundaries.
     for arg in &plan.arguments {
         command.arg(arg); // each argument passed separately (RUN-001)
     }
@@ -676,7 +678,11 @@ fn is_windows_batch_file(path: &Path) -> bool {
 /// Parse only the two npm `cmd-shim` invocation lines Atlas explicitly
 /// supports: direct `node` and the current generated `%_prog%` tail.
 #[cfg(windows)]
-fn parse_npm_cmd_shim_invocation<'a>(line: &'a str, exact_program_prefix: &str) -> Option<&'a str> {
+fn parse_npm_cmd_shim_invocation<'a>(
+    line: &'a str,
+    exact_program_prefix: &str,
+    allow_parent_script: bool,
+) -> Option<&'a str> {
     let quoted_script = line.strip_prefix(exact_program_prefix)?.strip_prefix('"')?;
     let closing_quote = quoted_script.find('"')?;
     if &quoted_script[closing_quote + 1..] != " %*" {
@@ -684,13 +690,20 @@ fn parse_npm_cmd_shim_invocation<'a>(line: &'a str, exact_program_prefix: &str) 
     }
     let script_token = &quoted_script[..closing_quote];
     let relative_script = script_token.strip_prefix("%dp0%\\")?;
+    let mut components = relative_script.split('\\');
+    if components.clone().next() == Some("..") {
+        if !allow_parent_script {
+            return None;
+        }
+        components.next();
+    }
     if relative_script.is_empty()
         || !relative_script.ends_with(".js")
         || !relative_script.chars().all(|character| {
             character.is_ascii_alphanumeric()
                 || matches!(character, '\\' | '@' | '_' | '-' | '.' | ' ')
         })
-        || relative_script.split('\\').any(|component| {
+        || components.any(|component| {
             component.is_empty()
                 || component == "."
                 || component == ".."
@@ -704,7 +717,7 @@ fn parse_npm_cmd_shim_invocation<'a>(line: &'a str, exact_program_prefix: &str) 
 }
 
 #[cfg(windows)]
-fn parse_npm_cmd_shim(text: &str) -> Option<&str> {
+fn parse_npm_cmd_shim(text: &str, allow_parent_script: bool) -> Option<&str> {
     const GENERATED_PROGRAM: &str =
         "endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & \"%_prog%\"  ";
 
@@ -721,7 +734,9 @@ fn parse_npm_cmd_shim(text: &str) -> Option<&str> {
     if direct.next() == Some("@ECHO off") {
         if let Some(invocation) = direct.next() {
             if direct.next().is_none() {
-                if let Some(script) = parse_npm_cmd_shim_invocation(invocation, "node ") {
+                if let Some(script) =
+                    parse_npm_cmd_shim_invocation(invocation, "node ", allow_parent_script)
+                {
                     return Some(script);
                 }
             }
@@ -755,7 +770,7 @@ fn parse_npm_cmd_shim(text: &str) -> Option<&str> {
     if generated.next().is_some() {
         return None;
     }
-    parse_npm_cmd_shim_invocation(invocation, GENERATED_PROGRAM)
+    parse_npm_cmd_shim_invocation(invocation, GENERATED_PROGRAM, allow_parent_script)
 }
 
 #[cfg(windows)]
@@ -822,13 +837,22 @@ fn resolve_npm_cmd_shim(
         return None;
     }
     let text = std::fs::read_to_string(resolved_path).ok()?;
-    let relative_script = parse_npm_cmd_shim(&text)?;
     let shim_directory = resolved_path.parent()?;
+    let allow_parent_script = shim_directory
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.eq_ignore_ascii_case(".bin"));
+    let relative_script = parse_npm_cmd_shim(&text, allow_parent_script)?;
     let script_path = shim_directory.join(relative_script);
     if !script_path.is_file() {
         return None;
     }
-    let canonical_directory = shim_directory.canonicalize().ok()?;
+    let allowed_directory = if relative_script.starts_with("..\\") {
+        shim_directory.parent()?
+    } else {
+        shim_directory
+    };
+    let canonical_directory = allowed_directory.canonicalize().ok()?;
     let canonical_script = script_path.canonicalize().ok()?;
     if !canonical_script.starts_with(canonical_directory) {
         return None;
@@ -1742,14 +1766,25 @@ mod tests {
             "endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & \"%_prog%\"";
 
         let direct = "@ECHO off\r\nnode \"%dp0%\\package\\main.js\" %*\r\n";
-        assert_eq!(parse_npm_cmd_shim(direct), Some("package\\main.js"));
+        assert_eq!(parse_npm_cmd_shim(direct, false), Some("package\\main.js"));
         let generated = format!(
             "@ECHO off\r\nGOTO start\r\n:find_dp0\r\nSET dp0=%~dp0\r\nEXIT /b\r\n:start\r\nSETLOCAL\r\nCALL :find_dp0\r\n\r\nIF EXIST \"%dp0%\\node.exe\" (\r\n  SET \"_prog=%dp0%\\node.exe\"\r\n) ELSE (\r\n  SET \"_prog=node\"\r\n  SET PATHEXT=%PATHEXT:;.JS;=;%\r\n)\r\n\r\n{GENERATED_PREFIX}  \"%dp0%\\node_modules\\@sourcegraph\\scip-typescript\\dist\\src\\main.js\" %*\r\n"
         );
         assert_eq!(
-            parse_npm_cmd_shim(&generated),
+            parse_npm_cmd_shim(&generated, false),
             Some("node_modules\\@sourcegraph\\scip-typescript\\dist\\src\\main.js")
         );
+        let local_generated = generated.replace(
+            "%dp0%\\node_modules\\@sourcegraph",
+            "%dp0%\\..\\@sourcegraph",
+        );
+        assert_eq!(parse_npm_cmd_shim(&local_generated, false), None);
+        assert_eq!(
+            parse_npm_cmd_shim(&local_generated, true),
+            Some("..\\@sourcegraph\\scip-typescript\\dist\\src\\main.js")
+        );
+        let parent_escape = "@ECHO off\r\nnode \"%dp0%\\..\\..\\payload.js\" %*\r\n";
+        assert_eq!(parse_npm_cmd_shim(parent_escape, true), None);
 
         for (description, malformed) in [
             ("LF-only direct template", direct.replace("\r\n", "\n")),
@@ -1767,7 +1802,7 @@ mod tests {
             ),
         ] {
             assert_eq!(
-                parse_npm_cmd_shim(&malformed),
+                parse_npm_cmd_shim(&malformed, false),
                 None,
                 "must reject {description}"
             );
@@ -1801,7 +1836,7 @@ mod tests {
         ] {
             let contents = format!("@ECHO off\r\n{rejected}\r\n");
             assert_eq!(
-                parse_npm_cmd_shim(&contents),
+                parse_npm_cmd_shim(&contents, false),
                 None,
                 "must reject {rejected:?}"
             );
@@ -1813,7 +1848,7 @@ mod tests {
             "@ECHO off\r\nnode \"%dp0%\\payload.js\" %*\r\nnode \"%dp0%\\other.js\" %*\r\n",
         ] {
             assert_eq!(
-                parse_npm_cmd_shim(contents),
+                parse_npm_cmd_shim(contents, false),
                 None,
                 "must reject an otherwise valid line in an unrecognized file"
             );
@@ -1893,6 +1928,57 @@ mod tests {
             resolve_execution_command("provider", dir.path(), &environment).is_none(),
             "multiple supported invocations are ambiguous"
         );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_absolute_npm_shim_preserves_argument_boundaries_without_a_shell() {
+        let dir = tempfile::tempdir().unwrap();
+        let shim = dir.path().join("provider.CMD");
+        let marker = dir.path().join("arguments.json");
+        std::fs::write(&shim, "@ECHO off\r\nnode \"%dp0%\\payload.js\" %*\r\n").unwrap();
+        std::fs::write(
+            dir.path().join("payload.js"),
+            "require('fs').writeFileSync(process.argv[2], JSON.stringify(process.argv.slice(3)));",
+        )
+        .unwrap();
+        let child_path = std::env::var("PATH").expect("test requires the installed node PATH");
+        let expected = vec![
+            "first value".to_string(),
+            "x&echo not-a-command".to_string(),
+            "\"quoted\"".to_string(),
+        ];
+        let plan = SpawnPlan {
+            command: shim.to_string_lossy().into_owned(),
+            arguments: std::iter::once(marker.to_string_lossy().into_owned())
+                .chain(expected.iter().cloned())
+                .collect(),
+            cwd: dir.path().to_path_buf(),
+            environment: vec![
+                ("PATH".to_string(), child_path),
+                ("PATHEXT".to_string(), ".CMD;.EXE".to_string()),
+                (
+                    "SYSTEMROOT".to_string(),
+                    std::env::var("SYSTEMROOT").expect("Windows requires SYSTEMROOT"),
+                ),
+            ],
+            timeout: Duration::from_secs(5),
+            graceful_cancel: Duration::from_millis(100),
+            max_stdout_bytes: 1024,
+            max_stderr_bytes: 1024,
+        };
+
+        let outcome = spawn_and_wait(&plan, &AtomicBool::new(false)).unwrap();
+        assert!(matches!(
+            outcome,
+            SpawnOutcome::Exited {
+                exit_code: Some(0),
+                ..
+            }
+        ));
+        let observed: Vec<String> =
+            serde_json::from_slice(&std::fs::read(marker).unwrap()).unwrap();
+        assert_eq!(observed, expected);
     }
 
     #[test]

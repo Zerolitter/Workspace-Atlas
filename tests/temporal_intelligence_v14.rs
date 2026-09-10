@@ -7,23 +7,33 @@ use workspace_atlas::workspace::{load_workspace, register_workspace};
 
 struct Fixture {
     _database_directory: tempfile::TempDir,
-    workspace_directory: tempfile::TempDir,
+    _workspace_directory: tempfile::TempDir,
+    workspace_root: std::path::PathBuf,
     database_path: std::path::PathBuf,
     config: Config,
     connection: rusqlite::Connection,
     workspace_id: String,
 }
-
 impl Fixture {
     fn new(files: &[(&str, &str)]) -> Self {
         let database_directory = tempfile::tempdir().unwrap();
-        let workspace_directory = tempfile::tempdir().unwrap();
+        let _workspace_directory = tempfile::tempdir().unwrap();
+        // Canonicalize the workspace root before any identity-bearing call.
+        // On macOS `tempfile::tempdir()` returns a symlink-backed lexical
+        // path whose canonical spelling differs; on Windows a short-name
+        // alias can resolve to a different spelling. CLI `resolve_catalogue`
+        // canonicalizes the supplied root and rejects a stored root that
+        // does not match via `paths_have_same_identity`, so the fixture
+        // must register and re-supply the same canonical spelling
+        // production would persist; otherwise status/supersession/CLI
+        // tests fail closed on the canonical root mismatch instead of
+        // exercising the temporal path.
+        let workspace_root = std::fs::canonicalize(_workspace_directory.path()).unwrap();
         for (path, source) in files {
-            let absolute = workspace_directory.path().join(path);
+            let absolute = workspace_root.join(path);
             std::fs::create_dir_all(absolute.parent().unwrap()).unwrap();
             std::fs::write(absolute, source).unwrap();
         }
-
         let config =
             Config::parse("schema_version = \"1.0.0\"\n[workspace]\ndisplay_name = \"v1.4-e2e\"\n")
                 .unwrap();
@@ -31,7 +41,7 @@ impl Fixture {
         let connection = init_catalogue(&database_path, &config).unwrap();
         let workspace = register_workspace(
             &connection,
-            workspace_directory.path(),
+            &workspace_root,
             &config,
             &database_path,
             "1.0.0",
@@ -40,7 +50,8 @@ impl Fixture {
 
         Self {
             _database_directory: database_directory,
-            workspace_directory,
+            _workspace_directory,
+            workspace_root,
             database_path,
             config,
             connection,
@@ -82,7 +93,7 @@ fn run_cli_temporal(
     let mut command = Command::new(env!("CARGO_BIN_EXE_atlas"));
     command
         .arg("temporal")
-        .arg(fixture.workspace_directory.path())
+        .arg(&fixture.workspace_root)
         .arg("--catalogue")
         .arg(&fixture.database_path);
     if let Some(from) = from {
@@ -96,7 +107,7 @@ fn run_cli_temporal(
 
 fn run_mcp_temporal(fixture: &Fixture, from: Option<&str>, max_records: Option<i64>) -> Value {
     let mut arguments = json!({
-        "workspace_root": fixture.workspace_directory.path(),
+        "workspace_root": fixture.workspace_root.to_string_lossy().into_owned(),
         "catalogue": fixture.database_path,
     });
     if let Some(from) = from {
@@ -143,12 +154,12 @@ fn temporal_report_is_deterministic_bounded_and_transport_stable() {
         "controlled-temporal-before",
     );
     std::fs::rename(
-        fixture.workspace_directory.path().join("src/a.ts"),
-        fixture.workspace_directory.path().join("src/renamed.ts"),
+        fixture.workspace_root.join("src/a.ts"),
+        fixture.workspace_root.join("src/renamed.ts"),
     )
     .unwrap();
     std::fs::write(
-        fixture.workspace_directory.path().join("src/b.ts"),
+        fixture.workspace_root.join("src/b.ts"),
         "export function beta() { return 20; }\n",
     )
     .unwrap();
@@ -219,18 +230,18 @@ fn temporal_report_marks_unreconciled_live_drift_as_stale_high_risk() {
     ]);
     let first_generation = fixture.reconcile();
     std::fs::write(
-        fixture.workspace_directory.path().join("src/a.ts"),
+        fixture.workspace_root.join("src/a.ts"),
         "export function alpha() { return 10; }\n",
     )
     .unwrap();
     fixture.reconcile();
     std::fs::write(
-        fixture.workspace_directory.path().join("src/a.ts"),
+        fixture.workspace_root.join("src/a.ts"),
         "export function alpha() { return 99; }\n",
     )
     .unwrap();
     std::fs::write(
-        fixture.workspace_directory.path().join("src/b.ts"),
+        fixture.workspace_root.join("src/b.ts"),
         "export function beta() { return 99; }\n",
     )
     .unwrap();

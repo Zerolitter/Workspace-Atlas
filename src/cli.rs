@@ -2558,6 +2558,60 @@ fn read_catalogue_locator(canonical_root: &Path) -> Result<Option<CatalogueLocat
     Ok(Some(locator))
 }
 
+struct CatalogueLocatorPublicationLock {
+    _file: std::fs::File,
+}
+
+impl CatalogueLocatorPublicationLock {
+    fn acquire(canonical_root: &Path) -> Result<Self> {
+        let catalogue_directory = default_catalogue_dir_parent()?;
+        let application_root = catalogue_directory
+            .parent()
+            .expect("platform catalogue directory always has an application parent");
+        let lock_directory = application_root.join(".locator-locks");
+        std::fs::create_dir_all(&lock_directory)?;
+        let canonical_application_root = std::fs::canonicalize(application_root)?;
+        let canonical_lock_directory = std::fs::canonicalize(&lock_directory)?;
+        if canonical_lock_directory != canonical_application_root.join(".locator-locks") {
+            return Err(AtlasError::Other(format!(
+                "catalogue locator lock directory {} physically escapes the Atlas application data directory",
+                lock_directory.display()
+            )));
+        }
+        let lock_path = canonical_lock_directory.join(format!(
+            "{}.lock",
+            workspace::blake3_root_fingerprint(canonical_root)?
+        ));
+        let file = match std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .open(&lock_path)
+        {
+            Ok(file) => file,
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                let canonical_lock = validate_physical_file(
+                    &lock_path,
+                    &canonical_lock_directory,
+                    "catalogue locator lock",
+                )?;
+                std::fs::OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .open(canonical_lock)?
+            }
+            Err(error) => return Err(error.into()),
+        };
+        file.lock().map_err(|error| {
+            AtlasError::Other(format!(
+                "catalogue locator publication lock {} is unavailable: {error}",
+                lock_path.display()
+            ))
+        })?;
+        Ok(Self { _file: file })
+    }
+}
+
 fn write_catalogue_locator(locator: &CatalogueLocator) -> Result<()> {
     let canonical_root = Path::new(&locator.canonical_root);
     if let Some(existing) = read_catalogue_locator(canonical_root)? {
@@ -2742,6 +2796,15 @@ fn lock_legacy_catalogue(file: &std::fs::File, path: &Path) -> Result<()> {
             path.display()
         ))
     })
+}
+fn probe_legacy_sqlite_lock(path: &Path) -> Result<()> {
+    let connection = rusqlite::Connection::open_with_flags(
+        path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )?;
+    connection.busy_timeout(Duration::ZERO)?;
+    connection.query_row("PRAGMA schema_version", [], |row| row.get::<_, i64>(0))?;
+    Ok(())
 }
 
 fn validate_legacy_header(header: &[u8], file_len: u64, path: &Path) -> Result<bool> {
@@ -2955,6 +3018,9 @@ fn open_legacy_catalogue_read_only(
             main_state.len,
             LEGACY_DISCOVERY_MAX_BYTES
         )));
+    }
+    if !uses_wal {
+        probe_legacy_sqlite_lock(path)?;
     }
     let snapshot_capacity = usize::try_from(main_state.len).map_err(|_| {
         AtlasError::Other(format!(
@@ -3257,6 +3323,10 @@ fn legacy_catalogue_matches(canonical_root: &Path) -> Result<Vec<CatalogueLocato
 }
 
 fn migrate_legacy_catalogue(canonical_root: &Path) -> Result<CatalogueLocator> {
+    let _publication_lock = CatalogueLocatorPublicationLock::acquire(canonical_root)?;
+    if let Some(locator) = read_catalogue_locator(canonical_root)? {
+        return Ok(locator);
+    }
     let matches = legacy_catalogue_matches(canonical_root)?;
     match matches.as_slice() {
         [] => Err(AtlasError::Other(format!(
@@ -3280,6 +3350,7 @@ fn prepare_default_catalogue_registration(
     catalogue_path: &Path,
 ) -> Result<()> {
     let expected = CatalogueLocator::new(canonical_root, workspace_id, catalogue_path)?;
+    let _publication_lock = CatalogueLocatorPublicationLock::acquire(canonical_root)?;
     if let Some(existing) = read_catalogue_locator(canonical_root)? {
         return if existing.has_same_route(&expected) {
             Ok(())
@@ -3294,8 +3365,12 @@ fn prepare_default_catalogue_registration(
 
     let matches = legacy_catalogue_matches(canonical_root)?;
     match matches.as_slice() {
-        [] => write_catalogue_locator(&expected),
-        [existing] if existing.has_same_route(&expected) => write_catalogue_locator(existing),
+        [] => {
+            write_catalogue_locator(&expected)
+        }
+        [existing] if existing.has_same_route(&expected) => {
+            write_catalogue_locator(existing)
+        }
         [existing] => Err(AtlasError::Other(format!(
             "workspace root {} is already registered as workspace {}; pass its original display name or use --catalogue explicitly",
             canonical_root.display(),
@@ -3452,6 +3527,10 @@ mod tests {
     use crate::discovery;
     use crate::generation::TriggerKind;
 
+    fn canonical_tempdir_path(directory: &tempfile::TempDir) -> PathBuf {
+        directory.path().canonicalize().unwrap()
+    }
+
     #[test]
     fn additive_boundary_errors_map_to_exact_cli_kinds() {
         use crate::context_application::{
@@ -3533,15 +3612,15 @@ mod tests {
     fn crash_leaves_active_pointer_intact_and_doctor_recovers() {
         let db_dir = tempfile::tempdir().unwrap();
         let ws_dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(ws_dir.path().join("src")).unwrap();
-        std::fs::write(ws_dir.path().join("src/a.ts"), "export const a = 1;\n").unwrap();
+        let ws_root = canonical_tempdir_path(&ws_dir);
+        std::fs::create_dir_all(ws_root.join("src")).unwrap();
+        std::fs::write(ws_root.join("src/a.ts"), "export const a = 1;\n").unwrap();
 
         let cfg = Config::parse("schema_version = \"1.0.0\"\n[workspace]\ndisplay_name = \"t\"\n")
             .unwrap();
         let db_path = db_dir.path().join("atlas.sqlite");
         let conn = init_catalogue(&db_path, &cfg).unwrap();
-        let ws =
-            workspace::register_workspace(&conn, ws_dir.path(), &cfg, &db_path, "1.0.0").unwrap();
+        let ws = workspace::register_workspace(&conn, &ws_root, &cfg, &db_path, "1.0.0").unwrap();
         workspace::persist_registered_config(&db_path, &ws, &cfg).unwrap();
         let baseline = discovery::reconcile(&ws, &conn, &cfg).unwrap();
         assert_eq!(baseline.activation, "committed");
@@ -3590,7 +3669,7 @@ mod tests {
 
         // "Restart": run doctor against the same catalogue -- it must find
         // and recover the stuck candidate.
-        let doctor_out = build_doctor_output(ws_dir.path(), Some(&db_path)).unwrap();
+        let doctor_out = build_doctor_output(&ws_root, Some(&db_path)).unwrap();
         assert_eq!(
             doctor_out.stuck_candidate_ids,
             vec![stuck.generation_id.clone()]
@@ -3616,7 +3695,7 @@ mod tests {
         assert_eq!(recovered_state, "abandoned");
 
         // Running doctor again finds nothing left to recover.
-        let doctor_again = build_doctor_output(ws_dir.path(), Some(&db_path)).unwrap();
+        let doctor_again = build_doctor_output(&ws_root, Some(&db_path)).unwrap();
         assert!(doctor_again.stuck_candidate_ids.is_empty());
         assert!(doctor_again.recovered_candidate_ids.is_empty());
 
@@ -3648,14 +3727,14 @@ mod tests {
     fn doctor_flags_stale_provider_executions_still_running() {
         let db_dir = tempfile::tempdir().unwrap();
         let ws_dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(ws_dir.path().join("src")).unwrap();
-        std::fs::write(ws_dir.path().join("src/a.ts"), "export const a = 1;\n").unwrap();
+        let ws_root = canonical_tempdir_path(&ws_dir);
+        std::fs::create_dir_all(ws_root.join("src")).unwrap();
+        std::fs::write(ws_root.join("src/a.ts"), "export const a = 1;\n").unwrap();
         let cfg = Config::parse("schema_version = \"1.0.0\"\n[workspace]\ndisplay_name = \"t\"\n")
             .unwrap();
         let db_path = db_dir.path().join("atlas.sqlite");
         let conn = init_catalogue(&db_path, &cfg).unwrap();
-        let ws =
-            workspace::register_workspace(&conn, ws_dir.path(), &cfg, &db_path, "1.0.0").unwrap();
+        let ws = workspace::register_workspace(&conn, &ws_root, &cfg, &db_path, "1.0.0").unwrap();
         let report = discovery::reconcile(&ws, &conn, &cfg).unwrap();
 
         // Simulate a provider execution left `running` by a crashed process
@@ -3675,7 +3754,7 @@ mod tests {
             rusqlite::params![ws.workspace_id, report.candidate_generation_id, provider_key, "a".repeat(64), migrations::iso8601_now()],
         ).unwrap();
 
-        let out = build_doctor_output(ws_dir.path(), Some(&db_path)).unwrap();
+        let out = build_doctor_output(&ws_root, Some(&db_path)).unwrap();
         assert_eq!(out.stale_provider_executions, 1);
         assert!(out
             .issues
@@ -3686,14 +3765,14 @@ mod tests {
     fn doctor_reports_unresolved_and_conflict_health_for_active_generation() {
         let db_dir = tempfile::tempdir().unwrap();
         let ws_dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(ws_dir.path().join("src")).unwrap();
-        std::fs::write(ws_dir.path().join("src/a.ts"), "export const a = 1;\n").unwrap();
+        let ws_root = canonical_tempdir_path(&ws_dir);
+        std::fs::create_dir_all(ws_root.join("src")).unwrap();
+        std::fs::write(ws_root.join("src/a.ts"), "export const a = 1;\n").unwrap();
         let cfg = Config::parse("schema_version = \"1.0.0\"\n[workspace]\ndisplay_name = \"t\"\n")
             .unwrap();
         let db_path = db_dir.path().join("atlas.sqlite");
         let conn = init_catalogue(&db_path, &cfg).unwrap();
-        let ws =
-            workspace::register_workspace(&conn, ws_dir.path(), &cfg, &db_path, "1.0.0").unwrap();
+        let ws = workspace::register_workspace(&conn, &ws_root, &cfg, &db_path, "1.0.0").unwrap();
         workspace::persist_registered_config(&db_path, &ws, &cfg).unwrap();
         let report = discovery::reconcile(&ws, &conn, &cfg).unwrap();
 
@@ -3711,7 +3790,7 @@ mod tests {
         )
         .unwrap();
 
-        let out = build_doctor_output(ws_dir.path(), Some(&db_path)).unwrap();
+        let out = build_doctor_output(&ws_root, Some(&db_path)).unwrap();
         assert_eq!(out.open_conflict_count, 1);
         assert_eq!(out.unresolved_relationship_count, 0);
         // A resolvable, self-healing conflict is not itself a hard doctor
@@ -3723,14 +3802,14 @@ mod tests {
     fn doctor_detects_a_tampered_migration_checksum() {
         let db_dir = tempfile::tempdir().unwrap();
         let ws_dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(ws_dir.path().join("src")).unwrap();
-        std::fs::write(ws_dir.path().join("src/a.ts"), "export const a = 1;\n").unwrap();
+        let ws_root = canonical_tempdir_path(&ws_dir);
+        std::fs::create_dir_all(ws_root.join("src")).unwrap();
+        std::fs::write(ws_root.join("src/a.ts"), "export const a = 1;\n").unwrap();
         let cfg = Config::parse("schema_version = \"1.0.0\"\n[workspace]\ndisplay_name = \"t\"\n")
             .unwrap();
         let db_path = db_dir.path().join("atlas.sqlite");
         let conn = init_catalogue(&db_path, &cfg).unwrap();
-        let ws =
-            workspace::register_workspace(&conn, ws_dir.path(), &cfg, &db_path, "1.0.0").unwrap();
+        let ws = workspace::register_workspace(&conn, &ws_root, &cfg, &db_path, "1.0.0").unwrap();
         discovery::reconcile(&ws, &conn, &cfg).unwrap();
 
         conn.execute(
@@ -3739,7 +3818,7 @@ mod tests {
         )
         .unwrap();
 
-        let out = build_doctor_output(ws_dir.path(), Some(&db_path)).unwrap();
+        let out = build_doctor_output(&ws_root, Some(&db_path)).unwrap();
         assert!(!out.migration_checksum_mismatches.is_empty());
         assert!(out
             .issues
@@ -3754,19 +3833,19 @@ mod tests {
     fn inspect_cmd_by_symbol_matches_inspect_cmd_by_path() {
         let db_dir = tempfile::tempdir().unwrap();
         let ws_dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(ws_dir.path().join("src")).unwrap();
-        std::fs::write(ws_dir.path().join("src/a.ts"), "export const a = 1;\n").unwrap();
+        let ws_root = canonical_tempdir_path(&ws_dir);
+        std::fs::create_dir_all(ws_root.join("src")).unwrap();
+        std::fs::write(ws_root.join("src/a.ts"), "export const a = 1;\n").unwrap();
         let cfg = Config::parse("schema_version = \"1.0.0\"\n[workspace]\ndisplay_name = \"t\"\n")
             .unwrap();
         let db_path = db_dir.path().join("atlas.sqlite");
         let conn = init_catalogue(&db_path, &cfg).unwrap();
-        let ws =
-            workspace::register_workspace(&conn, ws_dir.path(), &cfg, &db_path, "1.0.0").unwrap();
+        let ws = workspace::register_workspace(&conn, &ws_root, &cfg, &db_path, "1.0.0").unwrap();
         discovery::reconcile(&ws, &conn, &cfg).unwrap();
 
-        let by_path = build_inspect_output(ws_dir.path(), "src/a.ts", Some(&db_path)).unwrap();
+        let by_path = build_inspect_output(&ws_root, "src/a.ts", Some(&db_path)).unwrap();
         let key = by_path.symbols[0].canonical_symbol_key.clone();
-        let by_symbol = build_inspect_symbol_output(ws_dir.path(), &key, Some(&db_path)).unwrap();
+        let by_symbol = build_inspect_symbol_output(&ws_root, &key, Some(&db_path)).unwrap();
 
         assert_eq!(
             serde_json::to_value(&by_path).unwrap(),
@@ -3779,9 +3858,10 @@ mod tests {
     fn context_ir_cmd_auto_classifies_and_creates_a_task_session() {
         let db_dir = tempfile::tempdir().unwrap();
         let ws_dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(ws_dir.path().join("src")).unwrap();
+        let ws_root = canonical_tempdir_path(&ws_dir);
+        std::fs::create_dir_all(ws_root.join("src")).unwrap();
         std::fs::write(
-            ws_dir.path().join("src/a.ts"),
+            ws_root.join("src/a.ts"),
             "export function alpha() { return 1; }\n",
         )
         .unwrap();
@@ -3789,12 +3869,11 @@ mod tests {
             .unwrap();
         let db_path = db_dir.path().join("atlas.sqlite");
         let conn = init_catalogue(&db_path, &cfg).unwrap();
-        let ws =
-            workspace::register_workspace(&conn, ws_dir.path(), &cfg, &db_path, "1.0.0").unwrap();
+        let ws = workspace::register_workspace(&conn, &ws_root, &cfg, &db_path, "1.0.0").unwrap();
         discovery::reconcile(&ws, &conn, &cfg).unwrap();
 
         let out = build_context_ir_output(
-            ws_dir.path(),
+            &ws_root,
             "fix a bug in alpha".to_string(),
             None,
             vec![],
@@ -3877,14 +3956,14 @@ mod tests {
     ) -> (tempfile::TempDir, tempfile::TempDir, std::path::PathBuf) {
         let db_dir = tempfile::tempdir().unwrap();
         let ws_dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(ws_dir.path().join("src")).unwrap();
-        std::fs::write(ws_dir.path().join("src/a.ts"), source).unwrap();
+        let ws_root = canonical_tempdir_path(&ws_dir);
+        std::fs::create_dir_all(ws_root.join("src")).unwrap();
+        std::fs::write(ws_root.join("src/a.ts"), source).unwrap();
         let cfg = Config::parse("schema_version = \"1.0.0\"\n[workspace]\ndisplay_name = \"t\"\n")
             .unwrap();
         let db_path = db_dir.path().join("atlas.sqlite");
         let conn = init_catalogue(&db_path, &cfg).unwrap();
-        let ws =
-            workspace::register_workspace(&conn, ws_dir.path(), &cfg, &db_path, "1.0.0").unwrap();
+        let ws = workspace::register_workspace(&conn, &ws_root, &cfg, &db_path, "1.0.0").unwrap();
         discovery::reconcile(&ws, &conn, &cfg).unwrap();
         drop(conn);
         (db_dir, ws_dir, db_path)
@@ -3896,7 +3975,7 @@ mod tests {
         let (_db, ws, db_path) = context_ir_fixture("export function alpha() { return 1; }\n");
         let run = || {
             build_context_ir_output(
-                ws.path(),
+                &canonical_tempdir_path(&ws),
                 "inspect alpha".to_string(),
                 None,
                 vec![],
@@ -3960,7 +4039,7 @@ mod tests {
             "export function alpha() { return 1; }\nexport function beta() { return 2; }\nexport function gamma() { return 3; }\n",
         );
         let out = build_context_ir_output(
-            ws.path(),
+            &canonical_tempdir_path(&ws),
             "inspect module".to_string(),
             None,
             vec!["src/a.ts".to_string()],
@@ -4003,7 +4082,7 @@ mod tests {
     fn mixed_context_ir_telemetry_records_only_the_evidence_actually_supplied() {
         let (_db, ws, db_path) = context_ir_fixture("export function alpha() { return 1; }\n");
         let out = build_context_ir_output(
-            ws.path(),
+            &canonical_tempdir_path(&ws),
             "inspect mixed evidence".to_string(),
             None,
             vec![],
@@ -4036,16 +4115,17 @@ mod tests {
     fn blocked_context_ir_without_generation_persists_no_supplied_events() {
         let db_dir = tempfile::tempdir().unwrap();
         let ws_dir = tempfile::tempdir().unwrap();
-        std::fs::write(ws_dir.path().join("a.ts"), "export const a = 1;\n").unwrap();
+        let ws_root = canonical_tempdir_path(&ws_dir);
+        std::fs::write(ws_root.join("a.ts"), "export const a = 1;\n").unwrap();
         let cfg = Config::parse("schema_version = \"1.0.0\"\n[workspace]\ndisplay_name = \"t\"\n")
             .unwrap();
         let db_path = db_dir.path().join("atlas.sqlite");
         let conn = init_catalogue(&db_path, &cfg).unwrap();
-        workspace::register_workspace(&conn, ws_dir.path(), &cfg, &db_path, "1.0.0").unwrap();
+        workspace::register_workspace(&conn, &ws_root, &cfg, &db_path, "1.0.0").unwrap();
         drop(conn);
 
         let out = build_context_ir_output(
-            ws_dir.path(),
+            &ws_root,
             "inspect unavailable context".to_string(),
             None,
             vec![],
@@ -4071,9 +4151,10 @@ mod tests {
     fn context_ir_cmd_respects_declared_task_kind() {
         let db_dir = tempfile::tempdir().unwrap();
         let ws_dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(ws_dir.path().join("src")).unwrap();
+        let ws_root = canonical_tempdir_path(&ws_dir);
+        std::fs::create_dir_all(ws_root.join("src")).unwrap();
         std::fs::write(
-            ws_dir.path().join("src/a.ts"),
+            ws_root.join("src/a.ts"),
             "export function alpha() { return 1; }\n",
         )
         .unwrap();
@@ -4081,12 +4162,11 @@ mod tests {
             .unwrap();
         let db_path = db_dir.path().join("atlas.sqlite");
         let conn = init_catalogue(&db_path, &cfg).unwrap();
-        let ws =
-            workspace::register_workspace(&conn, ws_dir.path(), &cfg, &db_path, "1.0.0").unwrap();
+        let ws = workspace::register_workspace(&conn, &ws_root, &cfg, &db_path, "1.0.0").unwrap();
         discovery::reconcile(&ws, &conn, &cfg).unwrap();
 
         let out = build_context_ir_output(
-            ws_dir.path(),
+            &ws_root,
             "look at alpha".to_string(),
             Some("audit".to_string()),
             vec![],
@@ -4109,9 +4189,10 @@ mod tests {
     fn serving_build_cmd_produces_a_ready_projection() {
         let db_dir = tempfile::tempdir().unwrap();
         let ws_dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(ws_dir.path().join("src")).unwrap();
+        let ws_root = canonical_tempdir_path(&ws_dir);
+        std::fs::create_dir_all(ws_root.join("src")).unwrap();
         std::fs::write(
-            ws_dir.path().join("src/a.ts"),
+            ws_root.join("src/a.ts"),
             "export function alpha() { return 1; }\n",
         )
         .unwrap();
@@ -4119,11 +4200,10 @@ mod tests {
             .unwrap();
         let db_path = db_dir.path().join("atlas.sqlite");
         let conn = init_catalogue(&db_path, &cfg).unwrap();
-        let ws =
-            workspace::register_workspace(&conn, ws_dir.path(), &cfg, &db_path, "1.0.0").unwrap();
+        let ws = workspace::register_workspace(&conn, &ws_root, &cfg, &db_path, "1.0.0").unwrap();
         discovery::reconcile(&ws, &conn, &cfg).unwrap();
 
-        let out = build_serving_build_output(ws_dir.path(), Some(&db_path)).unwrap();
+        let out = build_serving_build_output(&ws_root, Some(&db_path)).unwrap();
         assert!(out.ok);
         assert_eq!(out.state, "ready");
         assert!(out.card_count >= 1);
@@ -4133,9 +4213,10 @@ mod tests {
     fn generation_delta_cmd_computes_and_persists() {
         let db_dir = tempfile::tempdir().unwrap();
         let ws_dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(ws_dir.path().join("src")).unwrap();
+        let ws_root = canonical_tempdir_path(&ws_dir);
+        std::fs::create_dir_all(ws_root.join("src")).unwrap();
         std::fs::write(
-            ws_dir.path().join("src/a.ts"),
+            ws_root.join("src/a.ts"),
             "export function alpha() { return 1; }\n",
         )
         .unwrap();
@@ -4143,14 +4224,13 @@ mod tests {
             .unwrap();
         let db_path = db_dir.path().join("atlas.sqlite");
         let conn = init_catalogue(&db_path, &cfg).unwrap();
-        let ws =
-            workspace::register_workspace(&conn, ws_dir.path(), &cfg, &db_path, "1.0.0").unwrap();
+        let ws = workspace::register_workspace(&conn, &ws_root, &cfg, &db_path, "1.0.0").unwrap();
         let gen1 = discovery::reconcile(&ws, &conn, &cfg)
             .unwrap()
             .candidate_generation_id;
 
         std::fs::write(
-            ws_dir.path().join("src/b.ts"),
+            ws_root.join("src/b.ts"),
             "export function beta() { return 2; }\n",
         )
         .unwrap();
@@ -4158,8 +4238,7 @@ mod tests {
             .unwrap()
             .candidate_generation_id;
 
-        let delta =
-            build_generation_delta_output(ws_dir.path(), &gen1, &gen2, Some(&db_path)).unwrap();
+        let delta = build_generation_delta_output(&ws_root, &gen1, &gen2, Some(&db_path)).unwrap();
         assert!(delta
             .files
             .changes
@@ -4183,14 +4262,14 @@ mod tests {
     fn doctor_detects_stale_serving_generations() {
         let db_dir = tempfile::tempdir().unwrap();
         let ws_dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(ws_dir.path().join("src")).unwrap();
-        std::fs::write(ws_dir.path().join("src/a.ts"), "export const a = 1;\n").unwrap();
+        let ws_root = canonical_tempdir_path(&ws_dir);
+        std::fs::create_dir_all(ws_root.join("src")).unwrap();
+        std::fs::write(ws_root.join("src/a.ts"), "export const a = 1;\n").unwrap();
         let cfg = Config::parse("schema_version = \"1.0.0\"\n[workspace]\ndisplay_name = \"t\"\n")
             .unwrap();
         let db_path = db_dir.path().join("atlas.sqlite");
         let mut conn = init_catalogue(&db_path, &cfg).unwrap();
-        let ws =
-            workspace::register_workspace(&conn, ws_dir.path(), &cfg, &db_path, "1.0.0").unwrap();
+        let ws = workspace::register_workspace(&conn, &ws_root, &cfg, &db_path, "1.0.0").unwrap();
         let report = discovery::reconcile(&ws, &conn, &cfg).unwrap();
 
         // Simulate a Serving Plane build left `building` by a crashed process.
@@ -4211,7 +4290,7 @@ mod tests {
         })
         .unwrap();
 
-        let out = build_doctor_output(ws_dir.path(), Some(&db_path)).unwrap();
+        let out = build_doctor_output(&ws_root, Some(&db_path)).unwrap();
         assert_eq!(out.stale_serving_generations, 1);
         assert!(out
             .issues

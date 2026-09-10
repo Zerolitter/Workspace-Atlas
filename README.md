@@ -6,7 +6,7 @@
 
 **Turn a changing repository into a small, current, evidence-backed working set—without making every agent relearn the codebase from scratch.**
 
-`v2.0.0 release candidate` · `Source-first` · `Local-first` · `Provider-neutral` · `CLI + MCP` · `MIT OR Apache-2.0`
+`v2.0.0` · `Source-first` · `Local-first` · `Provider-neutral` · `CLI + MCP` · `MIT OR Apache-2.0`
 
 </div>
 
@@ -191,7 +191,7 @@ V1.4 Temporal Intelligence compares the active committed generation with its ret
 
 ### Build from source
 
-The current installation path for the v2.0.0 release candidate is a locked source build:
+The supported installation path for v2.0.0 is a locked source build:
 
 ```sh
 git clone https://github.com/Zerolitter/Workspace-Atlas.git
@@ -329,7 +329,7 @@ Discovery classifies secret-bearing, vendor, build, and generated paths before i
 
 ## Release status and roadmap
 
-Workspace Atlas v2.0.0 is the first release candidate. Roadmap
+Workspace Atlas v2.0.0 is the first public, source-first release. Roadmap
 labels describe capability milestones independently of crate semantic versions.
 
 | Milestone | Status | Outcome |
@@ -339,10 +339,9 @@ labels describe capability milestones independently of crate semantic versions.
 | **V1.3 — Deterministic Task Compiler** | Complete | Give different task kinds the fixed evidence recipes they require. |
 | **V1.4 — Temporal Intelligence** | Complete | Explain what changed and what unchanged evidence remains live-verified. |
 | **V1.5 — Working-Set Qualification** | Post-v2 qualification | Retained benchmark work may inform later deterministic policy changes; it is not a runtime learning system or public performance claim. |
-| **V2.0 — Project Context Compiler** | **Release candidate — 2026-09-10** | Provide progressive DIRECT/LIGHT/DEEP acquisition and bounded, transient Context IR `2.0.0` while preserving explicit V1 compatibility. |
+| **V2.0 — Project Context Compiler** | **Released — 2026-09-10** | Provide progressive DIRECT/LIGHT/DEEP acquisition and bounded, transient Context IR `2.0.0` while preserving explicit V1 compatibility. |
 
-This release candidate makes no performance, capacity, or service-level guarantee.
-Final release is an atomic step that will update this wording without otherwise changing the documented contract.
+This release makes no performance, capacity, or service-level guarantee.
 
 ### Compatibility
 

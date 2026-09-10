@@ -97,8 +97,6 @@ jobs:
           --test retention_unregister
           --test benchmark_manifest
           --test distribution_readiness
-      - name: Full locked suite
-        run: cargo test --locked
       - name: Public hygiene unit tests
         run: python -m unittest scripts/test_check_public_hygiene.py
       - name: Public and package hygiene

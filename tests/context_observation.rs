@@ -82,14 +82,15 @@ struct BaseEvent {
 fn attributed_queries_and_validation_emit_existing_events_without_changing_results() {
     let database_directory = tempfile::tempdir().unwrap();
     let workspace_directory = tempfile::tempdir().unwrap();
-    std::fs::create_dir_all(workspace_directory.path().join("src")).unwrap();
+    let workspace_root = std::fs::canonicalize(workspace_directory.path()).unwrap();
+    std::fs::create_dir_all(workspace_root.join("src")).unwrap();
     std::fs::write(
-        workspace_directory.path().join("src/a.ts"),
+        workspace_root.join("src/a.ts"),
         "import { beta } from './b';\nexport function alpha() { return beta(); }\n",
     )
     .unwrap();
     std::fs::write(
-        workspace_directory.path().join("src/b.ts"),
+        workspace_root.join("src/b.ts"),
         "export function beta() { return 1; }\n",
     )
     .unwrap();
@@ -98,14 +99,8 @@ fn attributed_queries_and_validation_emit_existing_events_without_changing_resul
             .unwrap();
     let catalogue = database_directory.path().join("atlas.sqlite");
     let connection = init_catalogue(&catalogue, &config).unwrap();
-    let workspace = register_workspace(
-        &connection,
-        workspace_directory.path(),
-        &config,
-        &catalogue,
-        "1.0.0",
-    )
-    .unwrap();
+    let workspace =
+        register_workspace(&connection, &workspace_root, &config, &catalogue, "1.0.0").unwrap();
     let reconcile = discovery::reconcile(&workspace, &connection, &config).unwrap();
     let session = create_task_session(
         &connection,
@@ -121,7 +116,7 @@ fn attributed_queries_and_validation_emit_existing_events_without_changing_resul
     .unwrap();
     drop(connection);
 
-    let root = workspace_directory.path().to_str().unwrap();
+    let root = workspace_root.to_str().unwrap();
     let catalogue_path = catalogue.to_str().unwrap();
     let legacy_find = run_cli(&["find", root, "alpha", "--catalogue", catalogue_path]);
     let attributed_find = run_cli(&[
@@ -300,21 +295,16 @@ fn attributed_queries_and_validation_emit_existing_events_without_changing_resul
 fn failed_exact_source_remains_distinguishable_from_successful_retrieval() {
     let database_directory = tempfile::tempdir().unwrap();
     let workspace_directory = tempfile::tempdir().unwrap();
-    std::fs::write(workspace_directory.path().join("a.rs"), "pub fn a() {}\n").unwrap();
+    let workspace_root = std::fs::canonicalize(workspace_directory.path()).unwrap();
+    std::fs::write(workspace_root.join("a.rs"), "pub fn a() {}\n").unwrap();
     let config = Config::parse(
         "schema_version = \"1.0.0\"\n[workspace]\ndisplay_name = \"source-status\"\n",
     )
     .unwrap();
     let catalogue = database_directory.path().join("atlas.sqlite");
     let connection = init_catalogue(&catalogue, &config).unwrap();
-    let workspace = register_workspace(
-        &connection,
-        workspace_directory.path(),
-        &config,
-        &catalogue,
-        "1.0.0",
-    )
-    .unwrap();
+    let workspace =
+        register_workspace(&connection, &workspace_root, &config, &catalogue, "1.0.0").unwrap();
     let reconcile = discovery::reconcile(&workspace, &connection, &config).unwrap();
     let session = create_task_session(
         &connection,
@@ -330,7 +320,7 @@ fn failed_exact_source_remains_distinguishable_from_successful_retrieval() {
     .unwrap();
     drop(connection);
 
-    let root = workspace_directory.path().to_str().unwrap();
+    let root = workspace_root.to_str().unwrap();
     let catalogue_path = catalogue.to_str().unwrap();
     let success = run_cli(&[
         "source",
@@ -342,11 +332,7 @@ fn failed_exact_source_remains_distinguishable_from_successful_retrieval() {
         catalogue_path,
     ]);
     assert_eq!(success["status"], "verified");
-    std::fs::write(
-        workspace_directory.path().join("a.rs"),
-        "pub fn changed() {}\n",
-    )
-    .unwrap();
+    std::fs::write(workspace_root.join("a.rs"), "pub fn changed() {}\n").unwrap();
     let failure = run_cli(&[
         "source",
         root,
