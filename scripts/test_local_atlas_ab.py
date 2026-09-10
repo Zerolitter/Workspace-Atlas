@@ -29,6 +29,9 @@ class LocalAtlasAbTests(unittest.TestCase):
             request = json.load(sys.stdin)
             if request["task_id"] == "slow":
                 time.sleep(0.2)
+            if request["task_id"] == "oversized":
+                sys.stdout.write("x" * (1024 * 1024 + 1024))
+                raise SystemExit(0)
             if request["task_id"] == "malformed":
                 print("not json")
                 raise SystemExit(0)
@@ -56,6 +59,7 @@ class LocalAtlasAbTests(unittest.TestCase):
                 {"id": "no-acceptance", "prompt": "Return no accepted outcome."},
                 {"id": "malformed", "prompt": "Return malformed output."},
                 {"id": "slow", "prompt": "Exercise the runner timeout."},
+                {"id": "oversized", "prompt": "Exercise the output byte bound."},
             ],
         }), encoding="utf-8")
         self.adapter = self.workspace / "adapter.json"
@@ -142,6 +146,29 @@ class LocalAtlasAbTests(unittest.TestCase):
             )
         )
         self.assertTrue(all(row["error"] == {"kind": "timeout"} for row in records))
+
+    def test_oversized_runner_output_is_bounded_and_unavailable(self) -> None:
+        result = self.run_harness(
+            "oversized", extra=("--repetitions", "1")
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        records = [
+            json.loads(line)
+            for line in (self.destination / "raw.ndjson")
+            .read_text(encoding="utf-8")
+            .splitlines()
+        ]
+        self.assertEqual(len(records), 2)
+        self.assertTrue(
+            all(
+                row["error"] == {"kind": "runner_output_too_large"}
+                for row in records
+            )
+        )
+        self.assertTrue(
+            all(row["accepted_outcome"]["accepted"] is None for row in records)
+        )
 
     def test_bounds_explicit_selection_existing_destination_and_escape_fail_closed(self) -> None:
         cases = [

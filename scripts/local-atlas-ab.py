@@ -8,9 +8,12 @@ import json
 import os
 from pathlib import Path
 import re
+import signal
 import stat
 import subprocess
 import sys
+import tempfile
+import time
 from typing import Any
 
 SCHEMA_VERSION = "1.0.0"
@@ -182,41 +185,89 @@ def _capture(output: dict[str, Any], exit_code: int) -> dict[str, Any]:
     return captured
 
 
+def _unavailable(kind: str) -> dict[str, Any]:
+    return {
+        "accepted_outcome": {"accepted": None, "state": "unavailable"},
+        **{field: None for field in METRIC_FIELDS},
+        "tokens": None,
+        "atlas_route": None,
+        "context_expansion": None,
+        "error": {"kind": kind},
+    }
+
+
+def _terminate_tree(process: subprocess.Popen[bytes]) -> None:
+    if process.poll() is not None:
+        return
+    try:
+        if os.name == "nt":
+            subprocess.run(
+                ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+                check=False,
+            )
+        else:
+            os.killpg(process.pid, signal.SIGKILL)
+        process.wait(timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=5)
+
+
 def _run(command: list[str], request: dict[str, Any], cwd: Path, timeout: float) -> tuple[int | None, dict[str, Any]]:
     environment = {
         key: value for key, value in os.environ.items()
         if key.upper() in {"PATH", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "LANG", "LC_ALL"}
     }
     environment.update({"ATLAS_ENABLED": "1" if request["arm"] == "on" else "0", "ATLAS_AB_ARM": request["arm"], "PYTHONIOENCODING": "utf-8"})
+    creation_flags = (
+        getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) if os.name == "nt" else 0
+    )
+    with tempfile.TemporaryFile(dir=cwd) as runner_input, tempfile.TemporaryFile(
+        dir=cwd
+    ) as runner_output:
+        runner_input.write(_canonical(request))
+        runner_input.seek(0)
+        try:
+            process = subprocess.Popen(
+                command,
+                cwd=cwd,
+                stdin=runner_input,
+                stdout=runner_output,
+                stderr=subprocess.DEVNULL,
+                env=environment,
+                creationflags=creation_flags,
+                start_new_session=os.name != "nt",
+            )
+        except OSError:
+            return None, _unavailable("runner_launch")
+        deadline = time.monotonic() + timeout
+        failure: str | None = None
+        while process.poll() is None:
+            if runner_output.tell() > MAX_RUNNER_OUTPUT_BYTES:
+                failure = "runner_output_too_large"
+                break
+            if time.monotonic() >= deadline:
+                failure = "timeout"
+                break
+            time.sleep(0.01)
+        if failure is not None:
+            _terminate_tree(process)
+            return None if failure == "timeout" else process.returncode, _unavailable(failure)
+        if runner_output.tell() > MAX_RUNNER_OUTPUT_BYTES:
+            return process.returncode, _unavailable("runner_output_too_large")
+        runner_output.seek(0)
+        stdout = runner_output.read(MAX_RUNNER_OUTPUT_BYTES + 1)
     try:
-        result = subprocess.run(
-            command, cwd=cwd, input=_canonical(request), stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL, timeout=timeout, check=False, env=environment,
-        )
-    except subprocess.TimeoutExpired:
-        return None, {
-            "accepted_outcome": {"accepted": None, "state": "unavailable"},
-            **{field: None for field in METRIC_FIELDS}, "tokens": None,
-            "atlas_route": None, "context_expansion": None, "error": {"kind": "timeout"},
-        }
-    if len(result.stdout) > MAX_RUNNER_OUTPUT_BYTES:
-        return result.returncode, {
-            "accepted_outcome": {"accepted": None, "state": "unavailable"},
-            **{field: None for field in METRIC_FIELDS}, "tokens": None,
-            "atlas_route": None, "context_expansion": None, "error": {"kind": "runner_output_too_large"},
-        }
-    try:
-        value = json.loads(result.stdout.decode("utf-8"), object_pairs_hook=_duplicates)
+        value = json.loads(stdout.decode("utf-8"), object_pairs_hook=_duplicates)
         if not isinstance(value, dict):
             raise HarnessError("runner output is not an object")
-        return result.returncode, _capture(value, result.returncode)
+        return process.returncode, _capture(value, process.returncode)
     except (UnicodeDecodeError, json.JSONDecodeError, HarnessError):
-        return result.returncode, {
-            "accepted_outcome": {"accepted": None, "state": "unavailable"},
-            **{field: None for field in METRIC_FIELDS}, "tokens": None,
-            "atlas_route": None, "context_expansion": None,
-            "error": {"kind": "malformed_runner_output"},
-        }
+        return process.returncode, _unavailable("malformed_runner_output")
 
 
 def campaign(workspace: Path, tasks_path: Path, adapter_path: Path, destination: Path, selected: list[str], maximum_tasks: int, repetitions: int, timeout: float) -> dict[str, Any]:
