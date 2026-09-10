@@ -97,7 +97,7 @@ class BenchmarkEvidenceExportTests(unittest.TestCase):
         environment = self.workspace / "environment-input.json"
         environment.write_text(json.dumps({
             "atlas_version": "2.0.0", "architecture": "x86_64",
-            "HOME": "C:/Users/private", "UNRELATED_VALUE": "must-not-export",
+            "HOME": "C:/Users/<user>/private", "UNRELATED_VALUE": "must-not-export",
         }), encoding="utf-8")
         result = subprocess.run(
             [sys.executable, str(SCRIPT), "--workspace", str(self.workspace), "--input", str(source),
