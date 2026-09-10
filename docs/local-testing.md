@@ -47,6 +47,37 @@ create an operator-local adapter JSON:
 }
 ```
 
+For the workstation OMP/Ollama path, use the dependency-free
+`scripts/local-omp-json-stdio.py` adapter. Put the operator-specific adapter JSON
+outside the checkout (for example under `<LOCAL_TEMP_ROOT>`) and use absolute
+paths because each arm runs from its own directory:
+
+```json
+{
+  "schema_version": "1.0.0",
+  "adapter": "omp-json-stdio",
+  "model": "ollama/qwen2.5-coder:14b",
+  "command": [
+    "py",
+    "-3",
+    "<WORKSPACE>\\scripts\\local-omp-json-stdio.py",
+    "--model",
+    "ollama/qwen2.5-coder:14b",
+    "--atlas-mcp",
+    "<WORKSPACE>\\target\\debug\\atlas-mcp.exe"
+  ]
+}
+```
+
+The adapter validates that the request arm agrees with `ATLAS_ENABLED`, creates
+an isolated credential-free OMP configuration in the arm directory, and exposes
+the local `atlas-mcp` command only for the ON arm. OMP JSON events, diagnostics,
+the exact request/prompt, model result (when valid), and generated configuration
+remain in that arm directory. Stdout contains only the single harness response
+object. Acceptance comes only from a schema-valid model result; an OMP exit code
+alone never becomes acceptance. OMP-reported tokens and duration are retained,
+while source bytes and Atlas metrics remain `null` unless directly measured.
+
 Do not put credentials in the adapter command, model name, or task IDs. The harness
 stores separate SHA-256 identities for the command, model, adapter, and task
 content. The campaign identity also binds the timeout, repetition count, task

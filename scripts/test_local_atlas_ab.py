@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -17,6 +18,7 @@ from unittest import mock
 SCRIPT = Path(__file__).with_name("local-atlas-ab.py")
 EXPORTER = Path(__file__).with_name("benchmark-evidence-export.py")
 EXAMPLE = Path(__file__).with_name("local-ab-example-tasks.json")
+OMP_ADAPTER = Path(__file__).with_name("local-omp-json-stdio.py")
 
 DOCS = Path(__file__).parent.parent / "docs" / "local-testing.md"
 
@@ -368,6 +370,114 @@ class LocalAtlasAbTests(unittest.TestCase):
             documentation,
         )
         self.assertNotIn("environment.json contains no secrets", documentation)
+
+
+class LocalOmpJsonStdioTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.arm = Path(self.temporary.name) / "arm"
+        self.arm.mkdir()
+        self.atlas_mcp = Path(self.temporary.name) / "atlas-mcp.exe"
+        self.atlas_mcp.write_bytes(b"fixture")
+        self.fake_omp = Path(self.temporary.name) / "fake-omp.py"
+        self.fake_omp.write_text(textwrap.dedent("""\
+            import json, pathlib, sys
+            configured = (pathlib.Path.cwd() / ".mcp.json").is_file()
+            if "Return no accepted result." in " ".join(sys.argv):
+                result = {"result": "model omitted its acceptance decision"}
+            else:
+                result = {
+                    "accepted": configured,
+                    "state": "accepted" if configured else "rejected",
+                    "result": "observed model result",
+                }
+            message = {
+                "role": "assistant",
+                "content": [{"type": "text", "text": json.dumps(result)}],
+                "duration": 12.5,
+                "usage": {
+                    "input": 7, "output": 5, "cacheRead": 0,
+                    "cacheWrite": 0, "totalTokens": 12,
+                },
+            }
+            print(json.dumps({"type": "message_end", "message": message}))
+            print(json.dumps({
+                "type": "turn_end", "message": message,
+                "toolResults": [{"toolName": "read"}, {"toolName": "mcp__workspace_atlas__atlas_status"}],
+            }))
+            print("diagnostic stays off stdout", file=sys.stderr)
+        """), encoding="utf-8", newline="\n")
+
+    def run_adapter(
+        self, arm: str, enabled: str, prompt: str = "Inspect one bounded fixture.",
+    ) -> subprocess.CompletedProcess[str]:
+        request = {
+            "schema_version": "1.0.0",
+            "task_id": "fixture-task",
+            "prompt": prompt,
+            "repetition": 1,
+            "arm": arm,
+        }
+        return subprocess.run(
+            [
+                sys.executable, str(OMP_ADAPTER),
+                "--model", "ollama/qwen2.5-coder:14b",
+                "--atlas-mcp", str(self.atlas_mcp),
+                "--omp-command", sys.executable, str(self.fake_omp),
+            ],
+            cwd=self.arm,
+            input=json.dumps(request),
+            capture_output=True,
+            text=True,
+            env={
+                "PATH": os.environ["PATH"],
+                "ATLAS_ENABLED": enabled,
+                "ATLAS_AB_ARM": arm,
+            },
+            check=False,
+        )
+
+    def test_translates_model_result_and_enables_atlas_only_for_on_arm(self) -> None:
+        result = self.run_adapter("on", "1")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.count("\n"), 1)
+        observation = json.loads(result.stdout)
+        self.assertEqual(
+            observation["accepted_outcome"],
+            {"accepted": True, "state": "accepted"},
+        )
+        self.assertEqual(observation["tokens"], {"input": 7, "output": 5, "total": 12})
+        self.assertEqual(observation["tool_calls"], 2)
+        self.assertEqual(observation["files_read"], 1)
+        self.assertIsNone(observation["source_bytes_read"])
+        self.assertTrue((self.arm / ".mcp.json").is_file())
+        self.assertTrue((self.arm / "omp-output.ndjson").is_file())
+        self.assertEqual(
+            json.loads((self.arm / "model-result.json").read_text(encoding="utf-8"))["result"],
+            "observed model result",
+        )
+
+    def test_process_success_without_model_acceptance_stays_unavailable(self) -> None:
+        result = self.run_adapter("off", "0", "Return no accepted result.")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        observation = json.loads(result.stdout)
+        self.assertEqual(
+            observation["accepted_outcome"],
+            {"accepted": None, "state": "unavailable"},
+        )
+        self.assertFalse((self.arm / ".mcp.json").exists())
+        self.assertFalse((self.arm / "model-result.json").exists())
+
+    def test_rejects_arm_environment_mismatch_without_running_model(self) -> None:
+        result = self.run_adapter("off", "1")
+        self.assertNotEqual(result.returncode, 0)
+        observation = json.loads(result.stdout)
+        self.assertEqual(
+            observation["accepted_outcome"],
+            {"accepted": None, "state": "unavailable"},
+        )
+        self.assertFalse((self.arm / "omp-output.ndjson").exists())
 
 
 if __name__ == "__main__":
