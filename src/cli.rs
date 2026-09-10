@@ -2558,6 +2558,60 @@ fn read_catalogue_locator(canonical_root: &Path) -> Result<Option<CatalogueLocat
     Ok(Some(locator))
 }
 
+struct CatalogueLocatorPublicationLock {
+    _file: std::fs::File,
+}
+
+impl CatalogueLocatorPublicationLock {
+    fn acquire(canonical_root: &Path) -> Result<Self> {
+        let catalogue_directory = default_catalogue_dir_parent()?;
+        let application_root = catalogue_directory
+            .parent()
+            .expect("platform catalogue directory always has an application parent");
+        let lock_directory = application_root.join(".locator-locks");
+        std::fs::create_dir_all(&lock_directory)?;
+        let canonical_application_root = std::fs::canonicalize(application_root)?;
+        let canonical_lock_directory = std::fs::canonicalize(&lock_directory)?;
+        if canonical_lock_directory != canonical_application_root.join(".locator-locks") {
+            return Err(AtlasError::Other(format!(
+                "catalogue locator lock directory {} physically escapes the Atlas application data directory",
+                lock_directory.display()
+            )));
+        }
+        let lock_path = canonical_lock_directory.join(format!(
+            "{}.lock",
+            workspace::blake3_root_fingerprint(canonical_root)?
+        ));
+        let file = match std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .open(&lock_path)
+        {
+            Ok(file) => file,
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                let canonical_lock = validate_physical_file(
+                    &lock_path,
+                    &canonical_lock_directory,
+                    "catalogue locator lock",
+                )?;
+                std::fs::OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .open(canonical_lock)?
+            }
+            Err(error) => return Err(error.into()),
+        };
+        file.lock().map_err(|error| {
+            AtlasError::Other(format!(
+                "catalogue locator publication lock {} is unavailable: {error}",
+                lock_path.display()
+            ))
+        })?;
+        Ok(Self { _file: file })
+    }
+}
+
 fn write_catalogue_locator(locator: &CatalogueLocator) -> Result<()> {
     let canonical_root = Path::new(&locator.canonical_root);
     if let Some(existing) = read_catalogue_locator(canonical_root)? {
@@ -3269,6 +3323,10 @@ fn legacy_catalogue_matches(canonical_root: &Path) -> Result<Vec<CatalogueLocato
 }
 
 fn migrate_legacy_catalogue(canonical_root: &Path) -> Result<CatalogueLocator> {
+    let _publication_lock = CatalogueLocatorPublicationLock::acquire(canonical_root)?;
+    if let Some(locator) = read_catalogue_locator(canonical_root)? {
+        return Ok(locator);
+    }
     let matches = legacy_catalogue_matches(canonical_root)?;
     match matches.as_slice() {
         [] => Err(AtlasError::Other(format!(
@@ -3292,6 +3350,7 @@ fn prepare_default_catalogue_registration(
     catalogue_path: &Path,
 ) -> Result<()> {
     let expected = CatalogueLocator::new(canonical_root, workspace_id, catalogue_path)?;
+    let _publication_lock = CatalogueLocatorPublicationLock::acquire(canonical_root)?;
     if let Some(existing) = read_catalogue_locator(canonical_root)? {
         return if existing.has_same_route(&expected) {
             Ok(())
@@ -3306,8 +3365,12 @@ fn prepare_default_catalogue_registration(
 
     let matches = legacy_catalogue_matches(canonical_root)?;
     match matches.as_slice() {
-        [] => write_catalogue_locator(&expected),
-        [existing] if existing.has_same_route(&expected) => write_catalogue_locator(existing),
+        [] => {
+            write_catalogue_locator(&expected)
+        }
+        [existing] if existing.has_same_route(&expected) => {
+            write_catalogue_locator(existing)
+        }
         [existing] => Err(AtlasError::Other(format!(
             "workspace root {} is already registered as workspace {}; pass its original display name or use --catalogue explicitly",
             canonical_root.display(),
