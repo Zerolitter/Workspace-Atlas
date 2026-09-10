@@ -2756,9 +2756,10 @@ fn cli_materialization_pair_bounds_and_document_authority_fail_before_source_byt
 #[test]
 fn compact_and_unregister_use_exact_confirmations_without_touching_source() {
     let fixture = fixture("surface-cli-destructive-boundaries");
-    let root = fixture.workspace_directory.path().to_str().unwrap();
+    let workspace_root = fixture.workspace_directory.path().canonicalize().unwrap();
+    let root = workspace_root.to_str().unwrap();
     let catalogue = fixture.connection.path().unwrap().to_string();
-    let source = fixture.workspace_directory.path().join("src/lib.rs");
+    let source = workspace_root.join("src/lib.rs");
     let source_before = std::fs::read(&source).unwrap();
 
     let compact_preview = assert_cli_success(&run_atlas(&[
@@ -2802,8 +2803,9 @@ fn compact_and_unregister_use_exact_confirmations_without_touching_source() {
 
     let app_data = tempfile::tempdir().unwrap();
     let unregister_workspace = tempfile::tempdir().unwrap();
-    let unregister_root = unregister_workspace.path().to_str().unwrap();
-    let unregister_source = unregister_workspace.path().join("source.rs");
+    let unregister_root = unregister_workspace.path().canonicalize().unwrap();
+    let unregister_root = unregister_root.to_str().unwrap();
+    let unregister_source = std::path::Path::new(unregister_root).join("source.rs");
     std::fs::write(&unregister_source, "pub fn retained() {}\n").unwrap();
     let unregister_source_before = std::fs::read(&unregister_source).unwrap();
     let initialized = Command::cargo_bin("atlas")

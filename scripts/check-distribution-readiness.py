@@ -31,7 +31,7 @@ MAX_OUTPUT = 1_048_576
 MAX_ARCHIVE_BYTES = 64 * 1_048_576
 MAX_ARCHIVE_EXPANDED_BYTES = 64 * 1_048_576
 EXPECTED_WORKFLOW_SHA256 = "b5060db2858c8b31c2a9fa8f62b27ec1d2ece88732d3bc0be1451904644353d8"
-EXPECTED_QUALITY_WORKFLOW_SHA256 = "836c78dac99bc7b7d7748c4c1e331c96440c9d4d9f80681c603b3d5a0db1efd7"
+EXPECTED_QUALITY_WORKFLOW_SHA256 = "fcea8f8f14ffff91f8e49936164d4fb8a4240f83cddd8c43daff2ef117fca556"
 EXPECTED_GITATTRIBUTES = b"* text=auto\n\n*.rs text eol=lf\n*.toml text eol=lf\n*.md text eol=lf\n*.sql text eol=lf\n*.json text eol=lf\n*.jsonl text eol=lf\n*.yml text eol=lf\n*.yaml text eol=lf\n*.py text eol=lf\n*.ts text eol=lf\n*.tsx text eol=lf\n*.js text eol=lf\n*.jsx text eol=lf\nLICENSE text eol=lf\n\n*.png binary\n*.jpg binary\n*.jpeg binary\n*.gif binary\n*.webp binary\n*.sqlite binary\n*.scip binary\n*.zip binary\n*.7z binary\n"
 TIMEOUT_SECONDS = 180
 BASELINE_PACKAGE_PATHS = (

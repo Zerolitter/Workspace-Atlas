@@ -23,7 +23,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [windows-latest, macos-latest, ubuntu-latest]
-        rust: ["1.94", stable]
+        rust: ["1.94.1", stable]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     steps:
@@ -53,6 +53,9 @@ jobs:
           set -euo pipefail
           rustup toolchain install '${{ matrix.rust }}' --profile minimal --component rustfmt --component clippy --component rust-analyzer
           rustup override set '${{ matrix.rust }}'
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.cargo/bin:$PATH"
+          rust-analyzer --version
           rustc --version --verbose
           cargo --version --verbose
       - name: Format

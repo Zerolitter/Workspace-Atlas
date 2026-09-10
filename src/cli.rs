@@ -2743,6 +2743,15 @@ fn lock_legacy_catalogue(file: &std::fs::File, path: &Path) -> Result<()> {
         ))
     })
 }
+fn probe_legacy_sqlite_lock(path: &Path) -> Result<()> {
+    let connection = rusqlite::Connection::open_with_flags(
+        path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )?;
+    connection.busy_timeout(Duration::ZERO)?;
+    connection.query_row("PRAGMA schema_version", [], |row| row.get::<_, i64>(0))?;
+    Ok(())
+}
 
 fn validate_legacy_header(header: &[u8], file_len: u64, path: &Path) -> Result<bool> {
     if header.len() < 16 {
@@ -2948,6 +2957,9 @@ fn open_legacy_catalogue_read_only(
     })?;
     (&mut main_file).take(100).read_to_end(&mut snapshot)?;
     let uses_wal = validate_legacy_header(&snapshot, main_state.len, path)?;
+    if !uses_wal {
+        probe_legacy_sqlite_lock(path)?;
+    }
     if main_state.len > LEGACY_DISCOVERY_MAX_BYTES {
         return Err(AtlasError::Other(format!(
             "legacy catalogue {} is {} bytes, exceeding the legacy discovery ceiling of {} bytes",
