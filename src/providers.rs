@@ -1036,9 +1036,11 @@ export function scheduleReconnect(policy: RetryPolicy): TimerHandle {
             ],
             false,
         );
+        let command = std::env::var("ATLAS_TEST_SCIP_TYPESCRIPT_COMMAND")
+            .unwrap_or_else(|_| "scip-typescript".to_string());
         let probe = crate::provider_runtime::probe_provider(
             "scip-typescript",
-            "scip-typescript",
+            &command,
             &["--version".to_string()],
             dir.path(),
             env,
@@ -1047,7 +1049,7 @@ export function scheduleReconnect(policy: RetryPolicy): TimerHandle {
         assert_eq!(
             probe.status,
             crate::provider_contract::ProbeStatus::Available,
-            "expected the operator-installed scip-typescript@0.4.0 to probe as available: {probe:?}"
+            "expected the configured scip-typescript@0.4.0 command {command:?} to probe as available: {probe:?}"
         );
         let sealed =
             scip_typescript_descriptor(probe.executable_hash.as_deref(), &serde_json::json!({}));
