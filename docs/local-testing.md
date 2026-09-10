@@ -1,15 +1,15 @@
 # Local testing and benchmark evidence
 
 These dependency-free Python tools are checkout-local operator utilities. They do not
-change Atlas CLI, MCP, routing, or Rust benchmark contracts. Run them from the
-repository root with Python 3.
+change Atlas CLI, MCP, routing, or Rust benchmark contracts. The Windows examples
+below are PowerShell commands run from the repository root with Python 3.
 
 ## Audit disposable development artifacts
 
 Preview the exact files eligible for removal:
 
-```sh
-python scripts/local-artifact-cleanup.py --workspace .
+```powershell
+py -3 scripts/local-artifact-cleanup.py --workspace .
 ```
 
 The JSON report is deterministic and separates `proposed`, `deleted`, `protected`,
@@ -19,9 +19,8 @@ removal requires the explicit `--apply` flag. The fixed candidates are Cargo
 and provider temporary/output roots. A benchmark scratch directory is eligible only
 when explicitly supplied as a workspace-relative path:
 
-```sh
-python scripts/local-artifact-cleanup.py --workspace . \
-  --benchmark-scratch .local-atlas-scratch --apply
+```powershell
+py -3 scripts/local-artifact-cleanup.py --workspace . --benchmark-scratch .local-atlas-scratch --apply
 ```
 
 The tool never runs `cargo clean` or removes the whole `target` directory. Links,
@@ -45,19 +44,17 @@ create an operator-local adapter JSON:
 ```
 
 Do not put credentials in the adapter command, model name, or task IDs. The harness
-stores exact SHA-256 identities for the command, model, adapter, and task content,
-while retaining only sanitized command/model displays. It invokes the command
-directly, never through a shell, and contains the process tree for both successful
-and timed-out runs. For each explicitly selected task and repetition it runs `off`
+stores separate SHA-256 identities for the command, model, adapter, and task
+content. The campaign identity also binds the timeout, repetition count, task
+bound, and selected tasks. Only sanitized command/model displays are retained.
+The harness invokes the command directly, never through a shell, and contains
+the process tree for both successful and timed-out runs. For each explicitly
+selected task and repetition it runs `off`
 and then `on`, with a separate arm directory and `ATLAS_ENABLED` set to `0` or `1`
 respectively:
 
-```sh
-python scripts/local-atlas-ab.py --workspace . \
-  --tasks scripts/local-ab-example-tasks.json \
-  --adapter config/local-adapter.json \
-  --destination .local-atlas-runs/campaign-001 \
-  --task inspect-route --repetitions 1 --timeout 300
+```powershell
+py -3 scripts/local-atlas-ab.py --workspace . --tasks scripts/local-ab-example-tasks.json --adapter config/local-adapter.json --destination .local-atlas-runs/campaign-001 --task inspect-route-source --repetitions 1 --timeout 300
 ```
 
 Task count, repetitions, input/output sizes, and per-arm timeout are bounded. The
@@ -66,8 +63,8 @@ runner receives one JSON request on stdin with `schema_version`, `task_id`, `pro
 fields are:
 
 - `accepted_outcome`: `{ "accepted": true|false|null, "state": "..." }`
-- `elapsed_ms`
-- `tokens`: `input`, `output`, and `total`
+- adapter-reported `elapsed_ms`, retained separately as `adapter_elapsed_ms`
+- independently measured `runner_wall_ms`
 - `tool_calls`, `files_read`, and `source_bytes_read`
 - `atlas_route`, `atlas_runtime_ms`, and `context_expansion`
 
@@ -84,20 +81,21 @@ operator supplies the local command.
 
 Export Atlas JSON or NDJSON observations without modifying the input:
 
-```sh
-python scripts/benchmark-evidence-export.py --workspace . \
-  --input .local-atlas-runs/campaign-001/raw.ndjson \
-  --destination .local-atlas-runs/campaign-001-bundle
+```powershell
+py -3 scripts/benchmark-evidence-export.py --workspace . --input .local-atlas-runs/campaign-001/raw.ndjson --destination .local-atlas-runs/campaign-001-bundle
 ```
 
 The destination must be new, workspace-contained, and free of link/reparse ambiguity.
 The exporter rejects malformed input, duplicate JSON fields, non-finite numbers,
 count/hash/state mismatches, existing destinations, and containment escapes. For
-harness raw output it validates the adjacent harness manifest; for Atlas capacity
-raw output it validates the adjacent capacity summary when present and otherwise
-marks the input partial. It preserves failures, nulls, and unknown fields in the raw
-payload. `environment.json` contains only fixed host fields and an optional sanitized
-allowlist from `--environment`; it never dumps the environment or emits home paths.
+harness raw output it validates the adjacent harness manifest; if that manifest is
+missing, the bundle is partial and lists missing identity, count, and pairing
+provenance. For Atlas capacity raw output it validates the adjacent capacity summary
+when present and otherwise marks the input partial. It preserves failures, nulls,
+and unknown fields in the raw payload. `environment.json` contains only fixed host
+fields and an optional allowlist from `--environment`. Allowlisted strings matching
+absolute/home paths, control characters, or obvious secret-bearing assignments such
+as `password=...` are omitted; arbitrary environment variables are never dumped.
 
 Every bundle contains exactly:
 
@@ -106,7 +104,9 @@ Every bundle contains exactly:
 - `environment.json`: allowlisted, sanitized environment identity
 - `raw.json`: lossless parsed observation objects
 - `summary.json`: accepted, rejected, unavailable, failure, and total counts
-- `results.csv`: stable columns and task/repetition/OFF-before-ON ordering
+- `results.csv`: stable ordering plus bounded observation fields and canonical
+  `record_json` that preserves detailed failures, unknown fields, and null/missing
+  distinctions
 
 All text files use stable UTF-8 LF newlines. Bundle creation is exclusive: rerunning
 requires a new destination rather than overwriting accepted evidence.

@@ -2,8 +2,16 @@
   "schema_version": "1.0.0",
   "tasks": [
     {
-      "id": "inspect-route",
-      "prompt": "Inspect one known route and report the accepted outcome with structured metrics."
+      "id": "inspect-route-source",
+      "prompt": "Inspect the configured route and source for one bounded record and report the structured metrics."
+    },
+    {
+      "id": "plan-bounded-change",
+      "prompt": "Produce a small, bounded change plan for one labelled task without claiming that the change is correct."
+    },
+    {
+      "id": "handle-stale-error",
+      "prompt": "Surface any stale source reference or error kind explicitly as an unavailable observation."
     }
   ]
 }
