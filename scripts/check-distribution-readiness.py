@@ -53,6 +53,7 @@ BASELINE_PACKAGE_PATHS = (
     'config/workspace-atlas-v1.1.config.example.toml',
     'docs/CHANGELOG.md',
     'docs/README.md',
+    'docs/local-testing.md',
     'docs/adr/015-workspace-identity-and-catalogue-routing.md',
     'docs/adr/017-shared-cli-mcp-application-layer.md',
     'docs/adr/020-caller-driven-reconciliation.md',

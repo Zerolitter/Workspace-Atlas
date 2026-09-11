@@ -999,7 +999,7 @@ fn process_tree_memory_entrypoint_is_private_and_package_excluded() {
         String::from_utf8_lossy(&output.stderr)
     );
     let paths = String::from_utf8(output.stdout).unwrap();
-    assert_eq!(paths.lines().count(), 120);
+    assert_eq!(paths.lines().count(), 121);
     assert!(!paths
         .lines()
         .any(|path| path == "scripts/process-tree-memory.py"));
