@@ -2,6 +2,16 @@
 
 This changelog records crate releases and capability compatibility separately.
 
+## [Unreleased]
+
+### Fixed
+
+- Windows provider discovery now accepts Cargo/rustup executable proxies only
+  after validating the `rustup.exe` target, preserves proxy invocation
+  semantics, and fingerprints the effective toolchain component. This lets an
+  explicitly configured `rust-analyzer` run without weakening rejection of
+  opaque reparse aliases or stale provider-execution reuse.
+
 ## [2.0.0] - 2026-09-10
 
 ### Added
