@@ -636,34 +636,191 @@ fn resolve_executable_path(
 #[cfg(windows)]
 fn resolve_windows_candidate(candidate: &Path, path_ext: &[&str]) -> Option<PathBuf> {
     if candidate.extension().is_some() {
-        return is_real_executable_file(candidate).then(|| candidate.to_path_buf());
+        return resolve_real_executable_file(candidate);
     }
     path_ext.iter().find_map(|extension| {
         let mut executable_name = candidate.as_os_str().to_os_string();
         executable_name.push(extension);
-        let executable = PathBuf::from(executable_name);
-        is_real_executable_file(&executable).then_some(executable)
+        resolve_real_executable_file(&PathBuf::from(executable_name))
     })
 }
 
 #[cfg(windows)]
+const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+
+#[cfg(windows)]
 fn candidate_metadata_is_real(is_file: bool, file_attributes: u32, len: u64) -> bool {
-    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
     is_file && (file_attributes & FILE_ATTRIBUTE_REPARSE_POINT == 0 || len != 0)
 }
 
 #[cfg(windows)]
-fn is_real_executable_file(path: &Path) -> bool {
+fn candidate_metadata_is_direct(is_file: bool, file_attributes: u32, len: u64) -> bool {
+    is_file && file_attributes & FILE_ATTRIBUTE_REPARSE_POINT == 0 && len > 0
+}
+
+#[cfg(windows)]
+fn candidate_metadata_needs_symlink_resolution(
+    file_attributes: u32,
+    len: u64,
+    is_symlink: bool,
+) -> bool {
+    file_attributes & FILE_ATTRIBUTE_REPARSE_POINT != 0 && len == 0 && is_symlink
+}
+#[cfg(windows)]
+fn windows_file_identity(path: &Path) -> Option<(u64, u64)> {
+    use std::os::windows::io::AsRawHandle;
+
+    #[repr(C)]
+    struct FileTime {
+        low: u32,
+        high: u32,
+    }
+    #[repr(C)]
+    struct ByHandleFileInformation {
+        attributes: u32,
+        creation_time: FileTime,
+        last_access_time: FileTime,
+        last_write_time: FileTime,
+        volume_serial_number: u32,
+        file_size_high: u32,
+        file_size_low: u32,
+        number_of_links: u32,
+        file_index_high: u32,
+        file_index_low: u32,
+    }
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetFileInformationByHandle(
+            file: *mut std::ffi::c_void,
+            information: *mut ByHandleFileInformation,
+        ) -> i32;
+    }
+
+    let file = std::fs::File::open(path).ok()?;
+    let mut information = std::mem::MaybeUninit::<ByHandleFileInformation>::uninit();
+    // SAFETY: the borrowed live handle and exact Windows output structure are
+    // valid for this non-owning call.
+    if unsafe { GetFileInformationByHandle(file.as_raw_handle().cast(), information.as_mut_ptr()) }
+        == 0
+    {
+        return None;
+    }
+    // SAFETY: a successful call initializes every field.
+    let information = unsafe { information.assume_init() };
+    Some((
+        u64::from(information.volume_serial_number),
+        (u64::from(information.file_index_high) << 32) | u64::from(information.file_index_low),
+    ))
+}
+
+#[cfg(windows)]
+fn validated_rustup_proxy_target(path: &Path) -> Option<PathBuf> {
     use std::os::windows::fs::MetadataExt;
 
-    let Ok(metadata) = std::fs::symlink_metadata(path) else {
-        return false;
+    let proxy_name = path.file_stem()?;
+    let proxy_name_text = proxy_name.to_str()?;
+    if !is_dos_safe_path_component(proxy_name)
+        || proxy_name_text.starts_with('-')
+        || proxy_name_text.eq_ignore_ascii_case("rustup")
+    {
+        return None;
+    }
+
+    let metadata = std::fs::symlink_metadata(path).ok()?;
+    let target = if candidate_metadata_needs_symlink_resolution(
+        metadata.file_attributes(),
+        metadata.len(),
+        metadata.file_type().is_symlink(),
+    ) {
+        path.canonicalize().ok()?
+    } else if candidate_metadata_is_direct(
+        metadata.is_file(),
+        metadata.file_attributes(),
+        metadata.len(),
+    ) {
+        let sibling = path.with_file_name("rustup.exe");
+        (windows_file_identity(path)? == windows_file_identity(&sibling)?).then_some(sibling)?
+    } else {
+        return None;
     };
-    candidate_metadata_is_real(
+
+    let target_metadata = std::fs::symlink_metadata(&target).ok()?;
+    (target.is_absolute()
+        && target
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.eq_ignore_ascii_case("rustup.exe"))
+        && candidate_metadata_is_direct(
+            target_metadata.is_file(),
+            target_metadata.file_attributes(),
+            target_metadata.len(),
+        ))
+    .then_some(target)
+}
+
+#[cfg(windows)]
+fn resolve_real_executable_file(path: &Path) -> Option<PathBuf> {
+    use std::os::windows::fs::MetadataExt;
+
+    let metadata = std::fs::symlink_metadata(path).ok()?;
+    if candidate_metadata_is_real(
+        metadata.is_file(),
+        metadata.file_attributes(),
+        metadata.len(),
+    ) {
+        return Some(path.to_path_buf());
+    }
+
+    // Keep the proxy path for execution because rustup selects the requested
+    // tool from argv[0]. The canonical dispatcher target is validation only.
+    validated_rustup_proxy_target(path).map(|_| path.to_path_buf())
+}
+
+#[cfg(windows)]
+fn rustup_proxy_component_hash(
+    proxy: &Path,
+    cwd: &Path,
+    environment: &[(String, String)],
+    timeout: Duration,
+) -> Option<String> {
+    let rustup = validated_rustup_proxy_target(proxy)?;
+    let tool = proxy.file_stem()?.to_str()?.to_string();
+    let plan = SpawnPlan {
+        command: rustup.to_string_lossy().into_owned(),
+        arguments: vec!["which".to_string(), tool],
+        cwd: cwd.to_path_buf(),
+        environment: environment.to_vec(),
+        timeout: timeout.min(Duration::from_secs(5)),
+        graceful_cancel: Duration::from_millis(500),
+        max_stdout_bytes: 4096,
+        max_stderr_bytes: 4096,
+    };
+    let SpawnOutcome::Exited {
+        exit_code: Some(0),
+        stdout,
+        stdout_truncated: false,
+        ..
+    } = spawn_and_wait(&plan, &AtomicBool::new(false)).ok()?
+    else {
+        return None;
+    };
+    let output = std::str::from_utf8(&stdout).ok()?.trim();
+    if output.is_empty() || output.lines().count() != 1 {
+        return None;
+    }
+    let component = PathBuf::from(output);
+    if !component.is_absolute() {
+        return None;
+    }
+    let metadata = std::fs::symlink_metadata(&component).ok()?;
+    use std::os::windows::fs::MetadataExt;
+    candidate_metadata_is_direct(
         metadata.is_file(),
         metadata.file_attributes(),
         metadata.len(),
     )
+    .then(|| crate::hashing::content_hash_of_file(&component).ok())
+    .flatten()
 }
 
 #[cfg(windows)]
@@ -911,6 +1068,19 @@ pub fn probe_provider(
     let resolved = resolve_executable_path(command, cwd, &environment);
     #[cfg(not(windows))]
     let resolved = resolve_executable_path(command);
+    #[cfg(windows)]
+    let rustup_proxy = resolved
+        .as_deref()
+        .is_some_and(|path| validated_rustup_proxy_target(path).is_some());
+    #[cfg(windows)]
+    let executable_hash = resolved.as_deref().and_then(|path| {
+        if rustup_proxy {
+            rustup_proxy_component_hash(path, cwd, &environment, timeout)
+        } else {
+            crate::hashing::content_hash_of_file(path).ok()
+        }
+    });
+    #[cfg(not(windows))]
     let executable_hash = resolved
         .as_deref()
         .and_then(|path| crate::hashing::content_hash_of_file(path).ok());
@@ -932,6 +1102,29 @@ pub fn probe_provider(
                 severity: DiagnosticSeverity::Error,
                 code: "executable_not_found".to_string(),
                 message: format!("{command:?} was not found on the provider PATH"),
+            }],
+        };
+    }
+
+    #[cfg(windows)]
+    if rustup_proxy && executable_hash.is_none() {
+        return ProviderProbeResult {
+            schema_version: PROTOCOL_VERSION.to_string(),
+            provider_name: provider_name.to_string(),
+            status: ProbeStatus::Unavailable,
+            observed_version: None,
+            executable_path: resolved.map(|path| path.to_string_lossy().into_owned()),
+            executable_hash: None,
+            supported_output_formats: vec![],
+            supported_arguments: vec![],
+            network_isolation_state: NetworkIsolationState::NotApplicable,
+            observed_at,
+            diagnostics: vec![ProbeDiagnostic {
+                severity: DiagnosticSeverity::Error,
+                code: "executable_identity_unavailable".to_string(),
+                message: format!(
+                    "failed to resolve the effective rustup component identity for {command:?}"
+                ),
             }],
         };
     }
@@ -1607,6 +1800,113 @@ mod tests {
             1
         ));
         assert!(!candidate_metadata_is_real(false, 0, 1));
+        assert!(candidate_metadata_needs_symlink_resolution(
+            FILE_ATTRIBUTE_REPARSE_POINT,
+            0,
+            true
+        ));
+        assert!(!candidate_metadata_needs_symlink_resolution(
+            FILE_ATTRIBUTE_REPARSE_POINT,
+            0,
+            false
+        ));
+        assert!(candidate_metadata_is_direct(true, 0, 1));
+        assert!(!candidate_metadata_is_direct(
+            true,
+            FILE_ATTRIBUTE_REPARSE_POINT,
+            1
+        ));
+        assert!(!candidate_metadata_is_direct(true, 0, 0));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_rustup_hardlink_proxy_uses_the_sibling_dispatcher() {
+        let dir = tempfile::tempdir().unwrap();
+        let rustup = dir.path().join("rustup.exe");
+        let proxy = dir.path().join("provider.exe");
+        write_dummy_executable(&rustup);
+        std::fs::hard_link(&rustup, &proxy).unwrap();
+        let environment = vec![
+            (
+                "PATH".to_string(),
+                dir.path().to_string_lossy().into_owned(),
+            ),
+            ("PATHEXT".to_string(), ".EXE".to_string()),
+        ];
+
+        assert_eq!(validated_rustup_proxy_target(&proxy), Some(rustup.clone()));
+        assert_eq!(
+            resolve_executable_path(proxy.to_str().unwrap(), dir.path(), &environment),
+            Some(proxy)
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_installed_rust_analyzer_resolves_across_rustup_proxy_shapes() {
+        use std::os::windows::fs::MetadataExt;
+
+        let cargo_home = std::env::var_os("CARGO_HOME")
+            .map(PathBuf::from)
+            .or_else(|| {
+                std::env::var_os("USERPROFILE")
+                    .map(PathBuf::from)
+                    .map(|home| home.join(".cargo"))
+            })
+            .expect("Windows Rust tests require CARGO_HOME or USERPROFILE");
+        let proxy = cargo_home.join("bin/rust-analyzer.exe");
+        let metadata = std::fs::symlink_metadata(&proxy)
+            .expect("the pinned Rust test toolchain must install rust-analyzer");
+        let mut environment = build_environment(
+            &[
+                "CARGO_HOME".to_string(),
+                "HOME".to_string(),
+                "PATHEXT".to_string(),
+                "RUSTUP_HOME".to_string(),
+                "SYSTEMROOT".to_string(),
+                "USERPROFILE".to_string(),
+            ],
+            false,
+        );
+        environment.push((
+            "PATH".to_string(),
+            proxy.parent().unwrap().to_string_lossy().into_owned(),
+        ));
+
+        let resolved =
+            resolve_executable_path("rust-analyzer", Path::new("."), &environment).unwrap();
+        assert_eq!(
+            resolved.canonicalize().unwrap(),
+            proxy.canonicalize().unwrap()
+        );
+        assert!(
+            resolved
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.eq_ignore_ascii_case("rust-analyzer.exe")),
+            "must preserve the rustup proxy name, got {resolved:?}"
+        );
+        if candidate_metadata_needs_symlink_resolution(
+            metadata.file_attributes(),
+            metadata.len(),
+            metadata.file_type().is_symlink(),
+        ) {
+            assert!(validated_rustup_proxy_target(&proxy).is_some());
+            assert!(rustup_proxy_component_hash(
+                &proxy,
+                Path::new(env!("CARGO_MANIFEST_DIR")),
+                &environment,
+                Duration::from_secs(5),
+            )
+            .is_some());
+        } else {
+            assert!(candidate_metadata_is_real(
+                metadata.is_file(),
+                metadata.file_attributes(),
+                metadata.len(),
+            ));
+        }
     }
 
     #[cfg(windows)]

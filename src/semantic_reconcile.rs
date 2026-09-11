@@ -196,7 +196,7 @@ fn run_one_plan(
         &plan.provider_name,
         &plan.command,
         &plan.probe_arguments,
-        root,
+        &plan.scope.canonical_root,
         env.clone(),
         std::time::Duration::from_millis(plan.timeout_ms.min(15_000)),
     );

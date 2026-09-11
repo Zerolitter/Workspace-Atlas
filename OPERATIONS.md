@@ -437,6 +437,13 @@ Python 3 must be on `PATH`.
 cargo run --release --locked --bin atlas-bench
 ```
 
+Dependency-free local artifact auditing, bounded operator-supplied local-model
+OFF/ON runs, and portable evidence export are documented in
+[Local testing and benchmark evidence](docs/local-testing.md). These scripts are
+checkout-local tooling: cleanup defaults to dry-run, benchmark arms require
+explicit task IDs and bounds, and exporters require a new contained destination.
+They do not change `atlas-bench`, Atlas routing, or CLI/MCP authority.
+
 ## Current limitations
 
 - Dynamic or reflective edges cannot be resolved without provider evidence.

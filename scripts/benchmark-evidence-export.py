@@ -1,0 +1,864 @@
+#!/usr/bin/env python3
+"""Export bounded Atlas JSON or NDJSON observations as a portable evidence bundle."""
+from __future__ import annotations
+
+import argparse
+import csv
+import hashlib
+import io
+import json
+import os
+from pathlib import Path
+import platform
+import re
+import stat
+import sys
+from typing import Any
+
+SCHEMA_VERSION = "1.0.0"
+MAX_INPUT_BYTES = 512 * 1024 * 1024
+MAX_RECORD_BYTES = 8 * 1024 * 1024
+MAX_DOCUMENT_BYTES = 1024 * 1024
+MAX_RECORDS = 200_000
+ENVIRONMENT_KEYS = frozenset({
+    "atlas_version", "rustc_version", "toolchain", "os", "architecture", "cpu"
+})
+CSV_COLUMNS = (
+    "task_id", "repetition", "arm", "accepted", "accepted_state", "exit_code",
+    "elapsed_ms", "runner_wall_time_ms", "adapter_elapsed_ms",
+    "tokens_input", "tokens_output", "tokens_total", "tool_calls",
+    "files_read", "source_bytes_read", "atlas_route", "atlas_runtime_ms",
+    "context_expansion", "error_kind", "record_json",
+)
+
+CSV_NULL_TOKEN = "<null>"
+CSV_MISSING_TOKEN = "<missing>"
+TASK_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
+REQUIRED_EXECUTABLE_ROLES = frozenset({"adapter", "atlas-mcp", "omp"})
+HOME_OR_ABSOLUTE = re.compile(
+    r"(?:^[A-Za-z]:[\\/]|^/|^\\\\|^~|%(?:USERPROFILE|HOME)%|"
+    r"\$(?:HOME|USERPROFILE)|/(?:home|Users)/|[\\/]Users[\\/])",
+    re.IGNORECASE,
+)
+
+
+SECRET_VALUE_PATTERN = re.compile(
+    r"(?i)(?:^|[\s,;|])(?:password|passwd|pwd|secret|api[-_]?key|access[-_]?key|"
+    r"credential|auth[-_]?token|bearer|private[-_]?key|token)\s*[:=]\s*[^,;|\s][^,;|]*"
+    r"|(?:bearer|basic)\s+[A-Za-z0-9._~+/=-]{6,}",
+)
+
+
+class ExportError(RuntimeError):
+    """Input or output cannot satisfy the evidence bundle contract."""
+
+
+def _duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ExportError(f"duplicate JSON field: {key}")
+        result[key] = value
+    return result
+
+def _invalid_constant(value: str) -> Any:
+    raise ExportError(f"non-finite JSON number is forbidden: {value}")
+
+
+def _json_load(text: str, role: str) -> Any:
+    try:
+        return json.loads(
+            text, object_pairs_hook=_duplicates, parse_constant=_invalid_constant
+        )
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ExportError(f"{role} is malformed JSON") from error
+
+
+def _is_reparse(metadata: os.stat_result) -> bool:
+    return bool(getattr(metadata, "st_file_attributes", 0) & 0x400)
+
+
+def _identity(metadata: os.stat_result) -> tuple[int, int, int, int]:
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+    )
+
+
+def _safe_metadata(path: Path, role: str, kind: str) -> os.stat_result:
+    try:
+        metadata = path.lstat()
+    except OSError as error:
+        raise ExportError(f"cannot inspect {role}") from error
+    if stat.S_ISLNK(metadata.st_mode) or _is_reparse(metadata):
+        raise ExportError(f"{role} must not be a link or reparse point")
+    if kind == "file" and not stat.S_ISREG(metadata.st_mode):
+        raise ExportError(f"{role} must be a regular file")
+    if kind == "directory" and not stat.S_ISDIR(metadata.st_mode):
+        raise ExportError(f"{role} must be a directory")
+    return metadata
+
+
+def _contained(path: Path, workspace: Path, role: str) -> Path:
+    absolute = path.absolute()
+    try:
+        absolute.relative_to(workspace)
+    except ValueError as error:
+        raise ExportError(f"{role} escapes workspace") from error
+    return absolute
+
+
+def _safe_ancestors(path: Path, workspace: Path, include_path: bool) -> None:
+    current = path if include_path else path.parent
+    while True:
+        if current.exists() or current.is_symlink():
+            _safe_metadata(current, "path component", "directory")
+        if current == workspace:
+            break
+        if current.parent == current:
+            raise ExportError("path ancestry escapes workspace")
+        current = current.parent
+
+
+def _read_bounded_file(path: Path, maximum: int, role: str) -> bytes:
+    before = _safe_metadata(path, role, "file")
+    if before.st_size > maximum:
+        raise ExportError(f"{role} exceeds byte bound")
+    expected = _identity(before)
+    try:
+        with path.open("rb") as source:
+            opened = os.fstat(source.fileno())
+            if _identity(opened) != expected or not stat.S_ISREG(opened.st_mode):
+                raise ExportError(f"{role} changed before read")
+            data = source.read(maximum + 1)
+            if len(data) > maximum:
+                raise ExportError(f"{role} exceeds byte bound")
+            if _identity(os.fstat(source.fileno())) != expected:
+                raise ExportError(f"{role} changed while read")
+    except OSError as error:
+        raise ExportError(f"{role} is unreadable") from error
+    if _identity(_safe_metadata(path, role, "file")) != expected:
+        raise ExportError(f"{role} changed while read")
+    return data
+
+
+def _read_input(path: Path) -> tuple[bytes, list[dict[str, Any]], str, str]:
+    raw_bytes = _read_bounded_file(path, MAX_INPUT_BYTES, "input")
+    try:
+        text = raw_bytes.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise ExportError("input is unreadable UTF-8") from error
+    state = "complete"
+    if path.suffix.lower() == ".ndjson":
+        records: list[dict[str, Any]] = []
+        for number, line in enumerate(text.splitlines(), 1):
+            if not line.strip():
+                raise ExportError(f"NDJSON line {number} is empty")
+            if len(line.encode("utf-8")) > MAX_RECORD_BYTES:
+                raise ExportError("NDJSON record exceeds byte bound")
+            value = _json_load(line, f"NDJSON line {number}")
+            if not isinstance(value, dict):
+                raise ExportError("every observation must be a JSON object")
+            records.append(value)
+            if len(records) > MAX_RECORDS:
+                raise ExportError("input exceeds record bound")
+        input_format = "ndjson"
+    else:
+        value = _json_load(text, "input")
+        if isinstance(value, list):
+            records = value
+        elif isinstance(value, dict) and "records" in value:
+            records = value["records"]
+            state = value.get("state", "complete")
+            count = value.get("raw_count", len(records) if isinstance(records, list) else None)
+            if isinstance(records, list) and count != len(records):
+                raise ExportError("declared raw_count does not match records")
+        elif isinstance(value, dict):
+            records = [value]
+        else:
+            raise ExportError("JSON input must be an object or object array")
+        if state not in ("partial", "complete"):
+            raise ExportError("input state must be partial or complete")
+        if not isinstance(records, list) or len(records) > MAX_RECORDS or not all(isinstance(row, dict) for row in records):
+            raise ExportError("records must be a bounded array of objects")
+        for record in records:
+            if len(json.dumps(record, ensure_ascii=False).encode("utf-8")) > MAX_RECORD_BYTES:
+                raise ExportError("JSON record exceeds byte bound")
+        input_format = "json"
+    return raw_bytes, records, input_format, state
+
+
+def _canonical_bytes(value: Any) -> bytes:
+    return (json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False) + "\n").encode("utf-8")
+
+
+def _hash(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+def _valid_sha256(value: Any) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def _validated_executables(manifest: dict[str, Any]) -> list[dict[str, Any]] | None:
+    executables = manifest.get("executables")
+    if not isinstance(executables, list) or not 1 <= len(executables) <= 8:
+        return None
+    names: set[str] = set()
+    for entry in executables:
+        if not isinstance(entry, dict) or set(entry) != {
+            "bytes", "file", "name", "sha256", "version",
+            "version_identity_sha256",
+        }:
+            raise ExportError("harness executable provenance is malformed")
+        name, file_name, byte_count = entry["name"], entry["file"], entry["bytes"]
+        version, version_identity = (
+            entry["version"], entry["version_identity_sha256"]
+        )
+        if (
+            not isinstance(name, str)
+            or TASK_ID.fullmatch(name) is None
+            or name in names
+            or not isinstance(file_name, str)
+            or not file_name
+            or Path(file_name).name != file_name
+            or not isinstance(byte_count, int)
+            or isinstance(byte_count, bool)
+            or not 0 <= byte_count <= 512 * 1024 * 1024
+            or not _valid_sha256(entry["sha256"])
+            or (
+                version is not None
+                and (
+                    not isinstance(version, str)
+                    or not version
+                    or len(version) > 256
+                    or any(character in version for character in "\r\n\0")
+                )
+            )
+            or (
+                version is None
+                and version_identity is not None
+            )
+            or (
+                version is not None
+                and (
+                    not _valid_sha256(version_identity)
+                    or version_identity
+                    != _hash(
+                        (
+                            json.dumps(
+                                version, sort_keys=True, separators=(",", ":"),
+                                ensure_ascii=False,
+                            )
+                            + "\n"
+                        ).encode("utf-8")
+                    )
+                )
+            )
+        ):
+            raise ExportError("harness executable provenance is malformed")
+        names.add(name)
+    if (
+        not REQUIRED_EXECUTABLE_ROLES.issubset(names)
+        or not any(
+            entry["name"] == "omp" and entry["version"] is not None
+            for entry in executables
+        )
+    ):
+        return None
+    expected_identity = _hash(
+        (
+            json.dumps(
+                executables, sort_keys=True, separators=(",", ":"),
+                ensure_ascii=False,
+            )
+            + "\n"
+        ).encode("utf-8")
+    )
+    supplied_identity = manifest.get("executable_identity_sha256")
+    if not _valid_sha256(supplied_identity):
+        return None
+    if expected_identity != supplied_identity:
+        raise ExportError("harness executable identity contradiction")
+    return executables
+
+
+def _harness_provenance(
+    manifest: dict[str, Any],
+    records: list[dict[str, Any]],
+) -> list[str]:
+    missing: set[str] = set()
+    digest_fields = (
+        "adapter_identity_sha256",
+        "campaign_identity_sha256",
+        "command_identity_sha256",
+        "executable_identity_sha256",
+        "model_identity_sha256",
+    )
+    for field in digest_fields:
+        if field in manifest and not _valid_sha256(manifest[field]):
+            raise ExportError("harness identity hash is malformed")
+
+    tasks = manifest.get("tasks")
+    repetitions = manifest.get("repetitions")
+    maximum = manifest.get("max_tasks")
+    timeout = manifest.get("timeout_seconds")
+    task_manifest = manifest.get("task_manifest")
+    if (
+        isinstance(task_manifest, dict)
+        and "sha256" in task_manifest
+        and not _valid_sha256(task_manifest["sha256"])
+    ):
+        raise ExportError("harness task manifest hash is malformed")
+    if isinstance(tasks, list) and any(
+        not isinstance(task, str) or TASK_ID.fullmatch(task) is None
+        for task in tasks
+    ):
+        raise ExportError("harness task identity is malformed")
+    executables = _validated_executables(manifest)
+    identity_complete = (
+        isinstance(manifest.get("adapter"), str)
+        and bool(manifest["adapter"])
+        and isinstance(manifest.get("model"), str)
+        and bool(manifest["model"])
+        and isinstance(manifest.get("command_display"), list)
+        and bool(manifest["command_display"])
+        and all(isinstance(argument, str) for argument in manifest["command_display"])
+        and all(_valid_sha256(manifest.get(field)) for field in digest_fields)
+        and executables is not None
+        and isinstance(maximum, int)
+        and not isinstance(maximum, bool)
+        and 1 <= maximum <= 20
+        and isinstance(repetitions, int)
+        and not isinstance(repetitions, bool)
+        and 1 <= repetitions <= 10
+        and isinstance(timeout, (int, float))
+        and not isinstance(timeout, bool)
+        and 0 < timeout <= 3600
+        and isinstance(tasks, list)
+        and bool(tasks)
+        and all(TASK_ID.fullmatch(task) is not None for task in tasks)
+        and len(tasks) == len(set(tasks))
+        and len(tasks) <= maximum
+        and isinstance(task_manifest, dict)
+        and isinstance(task_manifest.get("name"), str)
+        and bool(task_manifest["name"])
+        and _valid_sha256(task_manifest.get("sha256"))
+    )
+    if not identity_complete:
+        missing.add("harness_identity")
+    else:
+        campaign_material = {
+            "adapter_identity_sha256": manifest["adapter_identity_sha256"],
+            "command_identity_sha256": manifest["command_identity_sha256"],
+            "executable_identity_sha256": manifest["executable_identity_sha256"],
+            "max_tasks": maximum,
+            "model_identity_sha256": manifest["model_identity_sha256"],
+            "repetitions": repetitions,
+            "task_manifest_sha256": task_manifest["sha256"],
+            "tasks": tasks,
+            "timeout_seconds": timeout,
+        }
+        campaign_identity = _hash(
+            (
+                json.dumps(
+                    campaign_material,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                )
+                + "\n"
+            ).encode("utf-8")
+        )
+        if campaign_identity != manifest["campaign_identity_sha256"]:
+            raise ExportError("harness campaign identity contradiction")
+
+    expected_count = manifest.get("expected_raw_count")
+    if expected_count is None:
+        missing.add("harness_expected_count")
+    elif (
+        not isinstance(expected_count, int)
+        or isinstance(expected_count, bool)
+        or expected_count < 0
+    ):
+        raise ExportError("harness identity count or state mismatch")
+    elif identity_complete and expected_count != len(tasks) * repetitions * 2:
+        raise ExportError("harness identity count or state mismatch")
+
+    expected_pairs: list[tuple[str, int, str]] = []
+    if identity_complete:
+        expected_pairs = [
+            (task, repetition, arm)
+            for task in tasks
+            for repetition in range(1, repetitions + 1)
+            for arm in ("off", "on")
+        ]
+    observed_pairs: list[tuple[Any, Any, Any]] = []
+    task_identities: dict[str, str] = {}
+    pairing_complete = identity_complete
+    for record in records:
+        if (
+            record.get("schema_version") != SCHEMA_VERSION
+            or record.get("kind") != "local-atlas-ab-observation"
+        ):
+            raise ExportError("harness observation schema mismatch")
+        task_id = record.get("task_id")
+        repetition = record.get("repetition")
+        arm = record.get("arm")
+        observed_pairs.append((task_id, repetition, arm))
+        task_identity = record.get("task_identity_sha256")
+        if task_identity is not None and not _valid_sha256(task_identity):
+            raise ExportError("harness observation identity hash is malformed")
+        if (
+            not isinstance(task_id, str)
+            or TASK_ID.fullmatch(task_id) is None
+            or not isinstance(repetition, int)
+            or isinstance(repetition, bool)
+            or arm not in ("off", "on")
+            or record.get("arm_workspace")
+            != f"arms/{task_id}/{repetition}/{arm}"
+            or task_identity is None
+        ):
+            pairing_complete = False
+        if isinstance(task_id, str) and isinstance(task_identity, str):
+            prior_task_identity = task_identities.setdefault(task_id, task_identity)
+            if prior_task_identity != task_identity:
+                raise ExportError("harness observation identity contradiction")
+        for field in (*digest_fields, "model", "timeout_seconds"):
+            if field not in record or field not in manifest:
+                missing.add("harness_identity")
+            elif record[field] != manifest[field]:
+                raise ExportError("harness observation identity contradiction")
+
+    if identity_complete:
+        pairing_complete = (
+            pairing_complete
+            and observed_pairs == expected_pairs[:len(records)]
+            and len(records) <= len(expected_pairs)
+            and len(records) % 2 == 0
+        )
+        if manifest.get("state") == "complete":
+            pairing_complete = pairing_complete and len(records) == len(expected_pairs)
+    if not pairing_complete:
+        missing.add("harness_pairing")
+    return sorted(missing)
+
+
+def _identity_sidecar(
+    source: Path,
+    workspace: Path,
+    raw_bytes: bytes,
+    records: list[dict[str, Any]],
+) -> tuple[str | None, dict[str, Any] | None]:
+    sidecar: Path | None = None
+    sidecar_kind = ""
+    record_count = len(records)
+    if source.name == "raw.ndjson":
+        candidate = source.with_name("harness-manifest.json")
+        if candidate.exists() or candidate.is_symlink():
+            sidecar, sidecar_kind = candidate, "harness"
+        elif any(
+            record.get("kind") == "local-atlas-ab-observation"
+            for record in records
+        ):
+            return "partial", {
+                "kind": "missing_harness_identity",
+                "name": "harness-manifest.json",
+                "raw_shape": "harness",
+                "record_count": record_count,
+            }
+        else:
+            return None, None
+    elif source.name in (
+        "capacity-raw-observations-v1.ndjson",
+        "test-capacity-raw-observations-v1.ndjson",
+    ):
+        name = (
+            "capacity-summary-v1.json"
+            if source.name.startswith("capacity-")
+            else "test-capacity-summary-v1.json"
+        )
+        candidate = source.with_name(name)
+        if candidate.exists() or candidate.is_symlink():
+            sidecar, sidecar_kind = candidate, "capacity"
+        else:
+            return "partial", {
+                "kind": "missing_capacity_identity",
+                "name": name,
+                "raw_shape": "capacity",
+                "record_count": record_count,
+            }
+    if sidecar is None:
+        return None, None
+    _safe_ancestors(sidecar, workspace, False)
+    sidecar_bytes = _read_bounded_file(sidecar, MAX_DOCUMENT_BYTES, "identity sidecar")
+    try:
+        value = _json_load(sidecar_bytes.decode("utf-8"), "identity sidecar")
+    except UnicodeDecodeError as error:
+        raise ExportError("identity sidecar is unreadable UTF-8") from error
+    if not isinstance(value, dict) or value.get("schema_version") != SCHEMA_VERSION:
+        raise ExportError("identity sidecar schema is malformed")
+    raw_sha256 = _hash(raw_bytes)
+    if value.get("raw_sha256") != raw_sha256:
+        raise ExportError("identity sidecar raw hash mismatch")
+    if sidecar_kind == "harness":
+        observed = value.get("raw_count")
+        expected = value.get("expected_raw_count")
+        state = value.get("state")
+        if state not in ("partial", "complete"):
+            raise ExportError("harness identity count or state mismatch")
+        missing = _harness_provenance(value, records)
+        if observed is None:
+            missing.append("harness_expected_count")
+        elif (
+            not isinstance(observed, int)
+            or isinstance(observed, bool)
+            or observed != record_count
+        ):
+            raise ExportError("harness identity count or state mismatch")
+        if expected is not None and (
+            observed is not None
+            and (
+                observed > expected
+                or (state == "complete" and observed != expected)
+            )
+        ):
+            raise ExportError("harness identity count or state mismatch")
+        if missing:
+            return "partial", {
+                "kind": "missing_harness_provenance",
+                "missing": sorted(set(missing)),
+            }
+    else:
+        attempted = value.get("attempted_records")
+        missing = value.get("missing_records")
+        duplicate = value.get("duplicate_records")
+        if (
+            value.get("kind") != "capacity-evidence-summary"
+            or not all(isinstance(item, int) and not isinstance(item, bool) and item >= 0 for item in (attempted, missing, duplicate))
+            or attempted != record_count
+        ):
+            raise ExportError("capacity summary count or schema mismatch")
+        state = "complete" if missing == 0 and duplicate == 0 else "partial"
+    return state, {
+        "bytes": len(sidecar_bytes),
+        "kind": sidecar_kind,
+        "name": sidecar.name,
+        "sha256": _hash(sidecar_bytes),
+    }
+
+
+def _accepted(record: dict[str, Any]) -> tuple[bool | None, str]:
+    outcome = record.get("accepted_outcome")
+    if isinstance(outcome, dict):
+        accepted = outcome.get("accepted")
+        state = outcome.get("state", "unavailable" if accepted is None else "accepted" if accepted else "rejected")
+    elif record.get("kind") in ("capacity-raw-observation", "test-capacity-raw-observation") and isinstance(record.get("correctness"), bool):
+        accepted = record["correctness"]
+        state = str(record.get("outcome", "unavailable"))
+    elif isinstance(record.get("accepted"), bool):
+        accepted = record["accepted"]
+        state = "accepted" if accepted else "rejected"
+    else:
+        accepted, state = None, "unavailable"
+    if accepted is not None and not isinstance(accepted, bool):
+        accepted = None
+        state = "unavailable"
+    return accepted, str(state)
+
+
+def _record_failed(record: dict[str, Any]) -> bool:
+    exit_code = record.get("exit_code")
+    capacity = record.get("kind") in (
+        "capacity-raw-observation", "test-capacity-raw-observation"
+    )
+    return bool(
+        record.get("error") is not None
+        or record.get("failure") is not None
+        or record.get("preparation_failure") is not None
+        or (isinstance(exit_code, int) and not isinstance(exit_code, bool) and exit_code != 0)
+        or (capacity and record.get("outcome") != "success")
+    )
+
+
+def _counts(records: list[dict[str, Any]]) -> dict[str, int]:
+    accepted = rejected = unavailable = failed = 0
+    for record in records:
+        outcome, _ = _accepted(record)
+        accepted += outcome is True
+        rejected += outcome is False
+        unavailable += outcome is None
+        failed += _record_failed(record)
+    return {"accepted": accepted, "failed": failed, "records": len(records), "rejected": rejected, "unavailable": unavailable}
+
+
+def _cell(value: Any, *, missing: bool = False) -> str:
+    if missing and value is __missing__:
+        return CSV_MISSING_TOKEN
+    if value is None:
+        return CSV_NULL_TOKEN
+    if value is True:
+        return "true"
+    if value is False:
+        return "false"
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return str(value)
+
+
+class _MissingSentinel:
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return "<missing>"
+
+
+__missing__ = _MissingSentinel()
+
+
+def _or_missing(record: dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        if key in record:
+            return record[key]
+    return __missing__
+
+
+def _sort_value(value: Any) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+
+
+def _csv_record(record: dict[str, Any]) -> str:
+    return json.dumps(
+        record,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+
+
+def _csv_bytes(records: list[dict[str, Any]]) -> bytes:
+    output = io.StringIO(newline="")
+    writer = csv.DictWriter(output, fieldnames=list(CSV_COLUMNS), lineterminator="\n")
+    writer.writeheader()
+    order = {"off": 0, "on": 1}
+    for record in sorted(records, key=lambda row: (
+        str(row.get("task_id", row.get("dataset_name", ""))),
+        _sort_value(row.get("repetition")),
+        order.get(str(row.get("arm", "")), 2),
+        _sort_value(row),
+    )):
+        accepted, accepted_state = _accepted(record)
+        tokens = record.get("tokens") if isinstance(record.get("tokens"), dict) else {}
+        error = record.get("error") if isinstance(record.get("error"), dict) else {}
+        context = record.get("context_expansion")
+        if context is None and record.get("kind") in ("capacity-raw-observation", "test-capacity-raw-observation"):
+            context = {
+                "records": record.get("compiler_selected_records"),
+                "source_bytes": record.get("compiler_selected_source_bytes"),
+                "estimated_tokens": record.get("compiler_selected_estimated_tokens"),
+            }
+        row = {
+            "task_id": _or_missing(record, "task_id", "dataset_name"),
+            "repetition": _or_missing(record, "repetition"),
+            "arm": _or_missing(record, "arm"),
+            "accepted": accepted, "accepted_state": accepted_state,
+            "exit_code": _or_missing(record, "exit_code"),
+            "elapsed_ms": _or_missing(record, "elapsed_ms", "wall_duration_ms"),
+            "runner_wall_time_ms": _or_missing(
+                record, "runner_wall_time_ms", "runner_wall_ms"
+            ),
+            "adapter_elapsed_ms": _or_missing(record, "adapter_elapsed_ms"),
+            "tokens_input": _or_missing(tokens, "input"),
+            "tokens_output": _or_missing(tokens, "output"),
+            "tokens_total": _or_missing(tokens, "total"),
+            "tool_calls": _or_missing(record, "tool_calls"),
+            "files_read": _or_missing(record, "files_read"),
+            "source_bytes_read": _or_missing(record, "source_bytes_read", "source_bytes"),
+            "atlas_route": _or_missing(record, "atlas_route"),
+            "atlas_runtime_ms": _or_missing(record, "atlas_runtime_ms", "atlas_runtime_duration_ms"),
+            "context_expansion": context,
+            "error_kind": _or_missing(error, "kind"),
+            "record_json": _csv_record(record),
+        }
+        writer.writerow({key: _cell(value, missing=True) for key, value in row.items()})
+    return output.getvalue().encode("utf-8")
+
+
+def _safe_environment_value(value: Any) -> bool:
+    if isinstance(value, bool) or isinstance(value, (int, float)):
+        return True
+    if not isinstance(value, str):
+        return False
+    encoded = value.encode("utf-8")
+    if len(encoded) > 512:
+        return False
+    if any(ord(character) < 32 for character in value):
+        return False
+    if HOME_OR_ABSOLUTE.search(value):
+        return False
+    if SECRET_VALUE_PATTERN.search(value):
+        return False
+    return True
+
+
+def _environment(path: Path | None) -> dict[str, Any]:
+    supplied: dict[str, Any] = {}
+    if path is not None:
+        data = _read_bounded_file(path, MAX_DOCUMENT_BYTES, "environment input")
+        try:
+            value = _json_load(data.decode("utf-8"), "environment")
+        except UnicodeDecodeError as error:
+            raise ExportError("environment input is unreadable UTF-8") from error
+        if not isinstance(value, dict):
+            raise ExportError("environment input must be an object")
+        for key in sorted(ENVIRONMENT_KEYS):
+            item = value.get(key)
+            if _safe_environment_value(item):
+                supplied[key] = item
+    return {
+        "allowlisted": supplied,
+        "host": {
+            "architecture": platform.machine() or "unknown",
+            "os": platform.system() or "unknown",
+            "python_version": platform.python_version(),
+        },
+        "schema_version": SCHEMA_VERSION,
+    }
+
+
+def _directory_guard(path: Path) -> tuple[int, int]:
+    metadata = _safe_metadata(path, "destination", "directory")
+    return metadata.st_dev, metadata.st_ino
+
+
+def _write_exclusive(path: Path, data: bytes) -> tuple[int, int, int, int]:
+    try:
+        with path.open("xb") as output:
+            output.write(data)
+            output.flush()
+            os.fsync(output.fileno())
+            return _identity(os.fstat(output.fileno()))
+    except FileExistsError as error:
+        raise ExportError(f"bundle output already exists: {path.name}") from error
+
+
+def _missing_provenance(
+    identity: dict[str, Any] | None, record_count: int,
+) -> list[str]:
+    missing: list[str] = []
+    if isinstance(identity, dict):
+        kind = identity.get("kind")
+        if kind == "missing_harness_identity":
+            missing.extend(["harness_identity", "harness_expected_count", "harness_pairing"])
+        elif kind == "missing_harness_provenance":
+            missing.extend(identity.get("missing", []))
+        elif kind == "missing_capacity_identity":
+            missing.append("capacity_identity")
+        elif kind and kind != "harness" and kind != "capacity":
+            missing.append("identity_pairing")
+    if record_count == 0:
+        missing.append("record_count")
+    return sorted(set(missing))
+
+
+def export(workspace: Path, source: Path, destination: Path, environment_path: Path | None) -> dict[str, Any]:
+    workspace = workspace.absolute()
+    source = _contained(source, workspace, "input")
+    destination = _contained(destination, workspace, "destination")
+    _safe_ancestors(source, workspace, False)
+    if destination.exists() or destination.is_symlink():
+        raise ExportError("destination already exists")
+    _safe_ancestors(destination, workspace, False)
+    if environment_path is not None:
+        environment_path = _contained(environment_path, workspace, "environment input")
+        _safe_ancestors(environment_path, workspace, False)
+        _safe_metadata(environment_path, "environment input", "file")
+    raw_input, records, input_format, state = _read_input(source)
+    sidecar_state, identity = _identity_sidecar(
+        source, workspace, raw_input, records
+    )
+    if sidecar_state is not None:
+        state = sidecar_state
+    environment = _environment(environment_path)
+    counts = _counts(records)
+    schemas = sorted({str(row["schema_version"]) for row in records if isinstance(row.get("schema_version"), str)})
+    payloads = {
+        "environment.json": _canonical_bytes(environment),
+        "raw.json": _canonical_bytes({"records": records, "schema_version": SCHEMA_VERSION}),
+        "summary.json": _canonical_bytes({"counts": counts, "schema_version": SCHEMA_VERSION, "state": state}),
+        "results.csv": _csv_bytes(records),
+    }
+    missing_provenance = _missing_provenance(identity, len(records))
+    manifest: dict[str, Any] = {
+        "bundle_schema_version": SCHEMA_VERSION,
+        "counts": counts,
+        "files": {name: {"bytes": len(data), "sha256": _hash(data)} for name, data in sorted(payloads.items())},
+        "input": {"bytes": len(raw_input), "format": input_format, "name": source.name, "sha256": _hash(raw_input)},
+        "missing_provenance": missing_provenance,
+        "source_schema_versions": schemas,
+        "state": state,
+    }
+    if (
+        identity is not None
+        and not str(identity.get("kind", "")).startswith("missing_")
+    ):
+        manifest["identity"] = identity
+    manifest_bytes = _canonical_bytes(manifest)
+
+    parent_guard = _directory_guard(destination.parent)
+    destination.mkdir()
+    if _directory_guard(destination.parent) != parent_guard:
+        raise ExportError("destination parent changed during creation")
+    destination_guard = _directory_guard(destination)
+    created: dict[Path, tuple[int, int, int, int]] = {}
+    try:
+        for name, data in payloads.items():
+            if _directory_guard(destination) != destination_guard:
+                raise ExportError("destination changed during bundle creation")
+            child = destination / name
+            created[child] = _write_exclusive(child, data)
+        if _directory_guard(destination) != destination_guard:
+            raise ExportError("destination changed during bundle creation")
+        manifest_path = destination / "manifest.json"
+        created[manifest_path] = _write_exclusive(manifest_path, manifest_bytes)
+        if _directory_guard(destination) != destination_guard:
+            raise ExportError("destination changed during bundle creation")
+    except BaseException:
+        try:
+            if _directory_guard(destination) == destination_guard:
+                for child, expected in reversed(tuple(created.items())):
+                    metadata = _safe_metadata(child, "partial bundle output", "file")
+                    if _identity(metadata) == expected:
+                        child.unlink()
+                destination.rmdir()
+        except (OSError, ExportError):
+            pass
+        raise
+    return manifest
+
+
+def main(arguments: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--workspace", type=Path, required=True)
+    parser.add_argument("--input", type=Path, required=True)
+    parser.add_argument("--destination", type=Path, required=True)
+    parser.add_argument("--environment", type=Path)
+    options = parser.parse_args(arguments)
+    try:
+        manifest = export(options.workspace, options.input, options.destination, options.environment)
+    except (ExportError, OSError) as error:
+        print(json.dumps({"error": str(error), "kind": "benchmark_evidence_export"}, sort_keys=True), file=sys.stderr)
+        return 2
+    print(json.dumps(manifest, sort_keys=True, separators=(",", ":")))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
