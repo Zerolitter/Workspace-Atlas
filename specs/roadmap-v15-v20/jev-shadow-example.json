@@ -1,0 +1,17 @@
+{
+  "task": "Fix reconnect timeout without changing login semantics.",
+  "atlas": {
+    "observed_route": "ATLAS_LIGHT",
+    "task_kind": "bug_fix",
+    "explicit_target": true,
+    "estimated_source_tokens": 940,
+    "direct_callers": 7,
+    "direct_callees": 3,
+    "tests": 4,
+    "packages_spanned": 3,
+    "conflicts": 0,
+    "unresolved_edges": 2,
+    "history_available": true,
+    "public_api": true
+  }
+}
