@@ -1,19 +1,34 @@
 ---
 name: workspace-atlas
-description: "Operate the Workspace Atlas CLI/MCP tool (atlas, atlas-mcp, atlas-bench) to index a repository and query bounded, evidence-backed context instead of re-reading the whole codebase. Use when working inside the Workspace-Atlas project itself, or when using atlas as a coding-agent memory layer against any other repository — initializing/reconciling a catalogue, searching symbols, tracing relationships, computing change impact, or building context packets."
+description: "Operate Workspace Atlas v2.0 as a local-first project-context compiler for coding agents. Use it to reconcile repository truth, discover the minimum context-acquisition route, query bounded evidence, live-verify exact source, compile task-specific Context IR when needed, inspect impact/history, and validate project changes without making every agent rescan the workspace."
 ---
 
-## What it is
+## What Workspace Atlas is
 
-Workspace Atlas (`workspace_atlas` crate, this repo) is a local-first memory
-layer for coding agents: a verified, incrementally updated SQLite catalogue of
-a project's files, symbols, relationships, effects, and history. It answers
-queries with bounded, evidence-backed context instead of requiring an agent to
-rediscover the repo from scratch each time.
+Workspace Atlas is a local-first, provider-neutral workspace intelligence layer.
+It maintains an incrementally reconciled SQLite catalogue of project files,
+revisions, symbols, relationships, effects, coverage, conflicts, lifecycle
+history, and immutable generations, then exposes bounded evidence to models and
+agents.
 
-Binaries: `atlas` (CLI), `atlas-mcp` (stdio JSON-RPC MCP adapter), `atlas-bench`
-(deterministic acceptance benchmark). This project builds and ships them; other
-projects consume `atlas`/`atlas-mcp` as a context tool.
+The operating principle is:
+
+```text
+compile project truth eagerly
+compile task context lazily
+```
+
+Atlas is not the source of truth, an autonomous coding agent, or an opaque
+memory system. Current source, builds, tests, and runtime evidence remain
+authoritative. Atlas never gains permission to edit source merely because it
+indexed or returned it.
+
+Binaries:
+
+- `atlas` — local CLI and authority boundary.
+- `atlas-mcp` — stdio JSON-RPC MCP adapter for supported shared application
+  operations.
+- `atlas-bench` — deterministic local acceptance/evidence harness.
 
 ## Build
 
@@ -21,85 +36,266 @@ projects consume `atlas`/`atlas-mcp` as a context tool.
 cargo build --release --locked
 ```
 
-Produces `target/release/atlas(.exe)`, `atlas-mcp`, `atlas-bench`. On Windows,
-`run-atlas.bat` forwards args to the release `atlas.exe`.
+This produces `target/release/atlas(.exe)`, `atlas-mcp`, and `atlas-bench`.
+On Windows, use the `.exe` binaries.
 
-## Using atlas against a repository (as a context tool)
+## Start with freshness
+
+Before relying on Atlas evidence when repository freshness is unknown:
 
 ```sh
-atlas init <path-to-repo>          # register workspace, create catalogue
-atlas reconcile <path-to-repo>     # index / re-index; run before relying on queries
-atlas status <path-to-repo>        # identity, active generation, integrity, lease state
-atlas find <path-to-repo> <query>  # search current symbol display names
-atlas inspect <path-to-repo> [path] [--symbol KEY]
-atlas trace <path-to-repo> <path>          # bounded relationship graph traversal
-atlas impact <path-to-repo> <path>...      # bounded change frontier
-atlas source <path-to-repo> <path>         # exact source, live-hash verified
-atlas context <path-to-repo> "<task>" --mode map|change|audit   # bounded context packet
-atlas context-ir <path-to-repo> "<task>"   # deterministic generation-bound Context IR
-atlas generation-delta <path-to-repo> <from> <to>
-atlas history <path-to-repo>
-atlas doctor <path-to-repo>        # health check, abandon interrupted-reconcile candidates
-atlas providers <path-to-repo>     # configured provider capabilities/state
-atlas serving-build <path-to-repo> # rebuild active generation's serving projection
+atlas init <repo>        # once per workspace registration
+atlas reconcile <repo>   # refresh project truth
+atlas status <repo>      # confirm active committed generation + integrity
 ```
 
-All commands take a workspace root, emit JSON (`--human` pretty-prints), and
-use `atlas <command> --help` for full flags. `--catalogue <path>` overrides
-catalogue location explicitly.
+Reconciliation is caller-driven. There is no required daemon or watcher.
+A failed candidate generation must not replace the last valid active generation.
 
-Key operating rules:
-- **No daemon/watcher.** Reconciliation is caller-driven (ADR-020) — always
-  run `atlas reconcile` before trusting query freshness; `atlas source`
-  independently blocks on a live content-hash mismatch.
-- **Single-writer lease.** Reconcile holds a 60s lease; a concurrent writer
-  fails fast. The active-generation pointer only advances on a successful
-  cycle, so a crash mid-reconcile leaves readers on the prior complete
-  generation. Run `atlas doctor` to mark/report abandoned candidates.
-- **Catalogue routing is platform-fixed** (ADR-015), not CWD-relative:
-  - Windows: `%LOCALAPPDATA%\WorkspaceAtlas\catalogues\<workspace_id>.sqlite`
-  - macOS: `$HOME/Library/Application Support/WorkspaceAtlas/catalogues/<workspace_id>.sqlite`
-  - Linux: `$XDG_DATA_HOME/workspace-atlas/catalogues/` or `~/.local/share/workspace-atlas/catalogues/<workspace_id>.sqlite`
-  Missing/empty/relative platform paths are hard errors; there is no CWD fallback.
-- Atlas never moves/renames/deletes files in the indexed project.
-- Backups: copy the catalogue SQLite file only while reconciliation is idle;
-  run `atlas doctor` (does `PRAGMA integrity_check`) after restore. Migrations
-  are forward-only, no downgrade path — restore a pre-upgrade backup instead.
+## Prefer the Context Governor for task-oriented work
 
-## MCP adapter
+Atlas v2.0 supports progressive context acquisition:
 
-`atlas-mcp` speaks newline-delimited JSON-RPC 2.0 over stdio; send
-`initialize` first. Tools mirror CLI application functions 1:1 (shared
-application layer, ADR-017): `workspace_root` required, `catalogue` optional.
+```text
+DIRECT
+  ↓
+ATLAS_LIGHT
+  ↓
+ATLAS_DEEP
+```
 
-## Developing this repo
+These are **context-acquisition depths**, not model tiers.
+
+First discover the supported Governor contract:
+
+```sh
+atlas governor capabilities <repo>
+```
+
+Then use `atlas governor run <repo> ...` according to the executable
+`--help` grammar and the capability response.
+
+### DIRECT
+
+Use DIRECT when the caller already has sufficient evidence for the task.
+A valid DIRECT result may be `direct_none`: zero Atlas context and no Context
+IR. Zero-context success is an intended Atlas outcome.
+
+Typical case: the user supplied an exact file/range and the task does not need
+repository discovery.
+
+### ATLAS_LIGHT
+
+Use LIGHT for target-bounded project evidence such as:
+
+- exact target identity;
+- source references;
+- direct relationships;
+- bounded impact frontier;
+- basic coverage/conflict state.
+
+LIGHT should stay small. It does not return a full Context Packet or Context IR.
+
+### ATLAS_DEEP
+
+Escalate to DEEP when the task needs synthesis across project structure, for
+example:
+
+- required-role closure;
+- cross-module behavioral changes;
+- temporal/history reasoning;
+- validation planning;
+- broader uncertainty resolution.
+
+DEEP may produce transient Context IR `2.0.0` under explicit positive bounds.
+
+### Progressive escalation
+
+Do not force DEEP up front merely because it exists.
+
+Prefer:
+
+```text
+sufficient caller evidence
+        ↓
+      DIRECT
+
+need bounded project facts
+        ↓
+   ATLAS_LIGHT
+
+still missing required evidence
+        ↓
+   ATLAS_DEEP
+```
+
+Escalate when the evidence requirement grows. Do not treat route depth as a
+proxy for model quality, vendor, locality, or price.
+
+## Exact-source safety
+
+Indexed source ranges are references, not permission to edit and not proof that
+the live file is unchanged.
+
+Before change-mode use, retrieve exact source through:
+
+```sh
+atlas source <repo> <path> ...
+```
+
+`atlas source` live-checks the current file hash and fails closed on stale
+indexed content.
+
+After source changes, reconcile before treating the new project state as
+current Atlas truth.
+
+## Explicit query surfaces remain valid
+
+Governor routing is additive. Explicit operations keep their own documented
+contracts and are not silently redirected through the Governor.
+
+Useful explicit commands include:
+
+```sh
+atlas find <repo> <query>
+atlas inspect <repo> [path] [--symbol KEY]
+atlas trace <repo> <path>
+atlas impact <repo> <path>...
+atlas source <repo> <path>
+atlas context <repo> "<task>" --mode map|change|audit
+atlas context-ir <repo> "<task>" ...
+atlas serving-build <repo>
+atlas generation-delta <repo> <from> <to>
+atlas temporal <repo> ...
+atlas history <repo>
+atlas providers <repo>
+atlas doctor <repo>
+```
+
+Use `atlas <command> --help` as the executable grammar reference.
+
+## How to reason about Atlas evidence
+
+Preserve these distinctions:
+
+- **Truth Plane** — canonical project evidence, generations, provenance,
+  coverage, conflicts, resolution state.
+- **Serving Plane** — derived, generation-bound, disposable projections for
+  efficient selection.
+- **Context/Governor layer** — task-dependent route, selection, packing, and
+  transient Context IR.
+
+Never silently turn any of the following into project truth:
+
+- ranking;
+- task classification;
+- relevance;
+- future learned/adaptive policy;
+- model-generated summaries;
+- probabilistic suggestions.
+
+Unresolved edges, partial coverage, conflicts, stale source, omissions, and
+unsupported providers are evidence too. Do not erase uncertainty from the
+answer.
+
+## MCP boundary
+
+`atlas-mcp` uses the same application semantics for the public operations it
+exposes, but CLI and MCP do **not** have identical authority.
+
+MCP is suitable for supported query, Governor, status, lifecycle-read, and
+derived Serving operations. It does not gain general filesystem mutation,
+source-edit authority, destructive catalogue authority, backup/export
+authority, privacy-compaction/unregister authority, or CLI-only source
+materialization.
+
+Always send `initialize` before `tools/list` or tool calls. Use capability
+discovery rather than assuming that a route feature is available.
+
+## Operating invariants
+
+- Source remains authoritative.
+- Failure preserves the previous valid committed generation.
+- Derived Serving data can be rebuilt from Truth.
+- Prediction/ranking never becomes evidence.
+- History is not current state.
+- Exact source for change-mode work must be live-verified.
+- Atlas indexes project state; it does not grant source mutation authority.
+- Keep requests bounded; do not use repository-scale work on the ordinary hot
+  retrieval path when a smaller evidence frontier is sufficient.
+
+## Catalogue and concurrency
+
+Without `--catalogue`, Atlas uses its platform application-data catalogue
+location. Do not invent a CWD-relative catalogue path.
+
+Reconciliation uses a single-writer lease; readers continue against the last
+complete committed generation while a candidate is being built.
+
+Back up a catalogue only while writers are stopped/idle. Migrations are
+forward-only; rollback means restoring a verified pre-upgrade backup with the
+compatible older binary.
+
+## Developing Workspace Atlas itself
+
+Run the locked product checks:
 
 ```sh
 cargo test --locked
-cargo run --release --locked --bin atlas-bench   # deterministic pilot fixture acceptance check
-python scripts/check-public-hygiene.py           # maintainers, before packaging (repo checkout only)
+cargo test --locked --test task_compiler_v13
+cargo test --locked --test temporal_intelligence_v14
+cargo run --release --locked --bin atlas-bench
 ```
 
-`atlas-bench` generates its fixture via `tests/fixtures/pilot/generate_fixture.py`
-(needs Python 3 on PATH) and checks catalogue/query/lifecycle/incremental-reconcile
-behavior against the manifest.
+Maintainers should also run:
 
-Source layout (`src/`): catalogue + generation state machine, structural
-providers, optional SCIP semantic providers (`scip_decoder.rs`, `scip_mapping.rs`),
-query/history/impact/source/context services, task-session + Context IR +
-serving-plane + generation-delta contracts (`task_session.rs`, `task_compiler.rs`,
-`serving.rs`, `query.rs`, `resolution.rs`, `semantic_reconcile.rs`).
+```sh
+cargo fmt --all -- --check
+python scripts/check-public-hygiene.py
+```
 
-Design contracts live in `docs/adr/` — read the relevant ADR before changing
-catalogue routing, CLI/MCP parity, reconciliation triggering, or licensing.
-Notably `docs/adr/015-workspace-identity-and-catalogue-routing.md` (identity/
-routing, authoritative) and `docs/adr/020-caller-driven-reconciliation.md`.
+Before changing routing, lifecycle, catalogue, CLI/MCP authority, or context
+contracts, read the relevant ADRs under `docs/adr/`. In particular, keep the
+Context Governor/compatibility boundary in ADR-023 and caller-driven freshness
+in ADR-020 intact unless a new accepted decision explicitly replaces them.
 
-## Current limitations (don't relitigate as bugs)
+## Current boundaries
 
-- Dynamic/reflective edges need provider evidence to resolve.
-- Rename detection requires an unambiguous exact-content-hash match.
-- Deleted-file tombstones keep metadata only, never raw snapshots.
-- No automatic history retention/compaction.
-- Excluded directories are classified but may still be traversed (reconcile
-  time cost on large build/dependency trees).
+Do not relitigate these as ordinary bugs without evidence:
+
+- dynamic/reflective relationships remain unresolved without provider evidence;
+- rename detection requires unambiguous exact-content-hash evidence;
+- deleted-file tombstones retain metadata, not raw source snapshots;
+- privacy retention exists, but configurable generation-history compaction is
+  not introduced;
+- confirmed whole-catalogue unregister currently fails closed before deletion
+  until its writer-exclusion/removal guarantees are proven;
+- temporal live verification is bounded to returned evidence and reports
+  omitted evidence as risk;
+- excluded directories may still be traversed, which can increase reconcile
+  time on very large build/dependency trees.
+
+## Default agent workflow
+
+For repository-changing work, prefer this sequence:
+
+```text
+reconcile if freshness is unknown
+        ↓
+discover Governor capabilities
+        ↓
+acquire the minimum sufficient route
+        ↓
+inspect uncertainty / coverage / omissions
+        ↓
+live-verify exact source before change
+        ↓
+make and validate the change outside Atlas
+        ↓
+reconcile changed project state
+        ↓
+use generation/temporal evidence for review when needed
+```
+
+The goal is not maximum Atlas usage. The goal is the **minimum sufficient
+trustworthy project assistance required for the task**.
