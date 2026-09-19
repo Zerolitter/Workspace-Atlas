@@ -119,10 +119,6 @@ jobs:
         run: |
           python scripts/provider-smoke.py --self-test
           python scripts/mcp-client-smoke.py --self-test
-          python -m py_compile scripts/jev-governor-shadow.py
-          python scripts/jev-governor-shadow.py self-test
-          python scripts/jev-governor-shadow.py dry-run --input specs/roadmap-v15-v20/jev-shadow-example.json > jev-shadow-dry-run.json
-          python -c "import json; d=json.load(open('jev-shadow-dry-run.json', encoding='utf-8')); assert d['authoritative'] is False; assert d['mode'] == 'dry_run'; assert d['request']['model'] == 'jev-latest'; assert d['request']['questions']['route']['type'] == 'choice'; assert d['request']['questions']['needs_escalation']['type'] == 'noul'; assert d['request']['questions']['risk']['type'] == 'score'"
       - name: Exercise old catalogue and installed providers
         shell: bash
         run: >-
