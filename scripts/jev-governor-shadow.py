@@ -1,31 +1,17 @@
 #!/usr/bin/env python3
-"""Research-only JEV shadow adapter for Workspace Atlas Governor evaluation.
-
-This script is deliberately outside the Atlas runtime path. It cannot change a
-Governor decision, catalogue state, Context IR, Serving state, or workspace
-source. Network execution is explicit through the `call` subcommand.
-
-The default request uses OpenRouter's documented OpenAI-compatible chat
-endpoint. `--request-json-schema` additionally asks for JSON Schema structured
-output; keep this optional until per-model support is proven in the experiment.
-"""
+"""Research-only TypeSafe/JEV shadow evaluator for Workspace Atlas."""
 
 from __future__ import annotations
 
 import argparse
 import hashlib
 import json
-import os
 import sys
-import urllib.error
-import urllib.request
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = "jev-governor-shadow-v0.1.0"
-DEFAULT_MODEL = "typesafe/jev-1.13"
-DEFAULT_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
-
+SCHEMA_VERSION = "jev-governor-shadow-v0.2.0"
+DEFAULT_MODEL = "jev-latest"
 ROUTES = ("DIRECT", "ATLAS_LIGHT", "ATLAS_DEEP")
 TASK_KINDS = (
     "bug_fix",
@@ -36,37 +22,9 @@ TASK_KINDS = (
     "audit",
     "unknown",
 )
-RISKS = ("minimal", "bounded", "broad", "uncertain")
-REASON_CODES = (
-    "explicit_target_sufficient",
-    "bounded_relationships_needed",
-    "cross_module_scope",
-    "public_api_surface",
-    "unresolved_edges",
-    "conflict_state",
-    "temporal_requirement",
-    "validation_requirement",
-    "high_context_cost",
-    "unknown_task_kind",
-    "insufficient_metadata",
-)
-
-# Exact key matches only. Fields such as estimated_source_tokens are allowed.
 FORBIDDEN_KEYS = {
-    "source",
-    "source_text",
-    "raw_source",
-    "file_contents",
-    "contents",
-    "snippet",
-    "diff",
-    "patch",
-    "secret",
-    "secrets",
-    "api_key",
-    "authorization",
-    "environment",
-    "env",
+    "source", "source_text", "raw_source", "file_contents", "contents",
+    "snippet", "diff", "patch", "secret", "secrets", "environment", "env",
 }
 
 
@@ -83,14 +41,8 @@ def sha256_text(value: str) -> str:
 
 
 def load_json(path: str) -> dict[str, Any]:
-    if path == "-":
-        raw = sys.stdin.read()
-    else:
-        raw = Path(path).read_text(encoding="utf-8")
-    try:
-        value = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise ContractError(f"input is not valid JSON: {exc}") from exc
+    raw = sys.stdin.read() if path == "-" else Path(path).read_text(encoding="utf-8")
+    value = json.loads(raw)
     if not isinstance(value, dict):
         raise ContractError("input root must be a JSON object")
     return value
@@ -99,8 +51,7 @@ def load_json(path: str) -> dict[str, Any]:
 def find_forbidden_key(value: Any, trail: tuple[str, ...] = ()) -> str | None:
     if isinstance(value, dict):
         for key, child in value.items():
-            lowered = str(key).strip().lower()
-            if lowered in FORBIDDEN_KEYS:
+            if str(key).strip().lower() in FORBIDDEN_KEYS:
                 return ".".join((*trail, str(key)))
             found = find_forbidden_key(child, (*trail, str(key)))
             if found:
@@ -114,315 +65,236 @@ def find_forbidden_key(value: Any, trail: tuple[str, ...] = ()) -> str | None:
 
 
 def validate_input(value: dict[str, Any]) -> None:
-    task = value.get("task")
-    atlas = value.get("atlas")
-    if not isinstance(task, str) or not task.strip():
+    if not isinstance(value.get("task"), str) or not value["task"].strip():
         raise ContractError("input.task must be a non-empty string")
-    if len(task) > 12000:
-        raise ContractError("input.task exceeds the 12,000-character research bound")
-    if not isinstance(atlas, dict):
+    if not isinstance(value.get("atlas"), dict):
         raise ContractError("input.atlas must be a JSON object")
-
     forbidden = find_forbidden_key(value)
     if forbidden:
         raise ContractError(
             f"input contains forbidden raw/sensitive field '{forbidden}'; "
-            "the first JEV experiment accepts task text plus bounded metadata only"
+            "the first experiment accepts task text plus bounded metadata only"
         )
 
 
-def decision_json_schema() -> dict[str, Any]:
+def state_for(value: dict[str, Any]) -> dict[str, Any]:
     return {
-        "type": "object",
-        "properties": {
-            "route": {"type": "string", "enum": list(ROUTES)},
-            "task_kind": {"type": "string", "enum": list(TASK_KINDS)},
-            "requires_history": {"type": "boolean"},
-            "requires_validation_plan": {"type": "boolean"},
-            "risk": {"type": "string", "enum": list(RISKS)},
-            "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
-            "reasons": {
-                "type": "array",
-                "items": {"type": "string", "enum": list(REASON_CODES)},
-                "uniqueItems": True,
-                "maxItems": 8,
+        "task": value["task"],
+        "atlas": value["atlas"],
+        "experiment": {
+            "purpose": "shadow prediction only",
+            "authoritative": False,
+            "route_order": list(ROUTES),
+        },
+    }
+
+
+def questions() -> dict[str, dict[str, Any]]:
+    return {
+        "route": {
+            "type": "choice",
+            "instructions": (
+                "Choose the minimum Workspace Atlas context-acquisition route likely "
+                "sufficient for `task` given `atlas`. Prefer less context when sufficient. "
+                "Choose deeper context when relationships, uncertainty, temporal evidence, "
+                "or validation needs make a shallower route insufficient."
+            ),
+            "criteria": {
+                "DIRECT": "Direct/caller-provided context is likely sufficient.",
+                "ATLAS_LIGHT": "Bounded target/source/relationship/coverage evidence is likely needed.",
+                "ATLAS_DEEP": "Full bounded task-specific Context IR is likely needed.",
             },
         },
-        "required": [
-            "route",
-            "task_kind",
-            "requires_history",
-            "requires_validation_plan",
-            "risk",
-            "confidence",
-            "reasons",
-        ],
-        "additionalProperties": False,
-    }
-
-
-def build_request(
-    experiment_input: dict[str, Any],
-    model: str,
-    request_json_schema: bool,
-) -> dict[str, Any]:
-    system = (
-        "You are a research-only shadow policy evaluator for Workspace Atlas. "
-        "Predict the minimum useful context-acquisition depth for the supplied "
-        "task and bounded Atlas metadata. You do not decide repository truth and "
-        "you do not authorize edits. Return ONLY one JSON object matching the "
-        "closed output contract. Do not include prose, markdown, hidden reasoning, "
-        "or chain-of-thought."
-    )
-
-    user_payload = {
-        "question": "What is the minimum useful Atlas route for this task?",
-        "route_vocabulary": list(ROUTES),
-        "task_kind_vocabulary": list(TASK_KINDS),
-        "risk_vocabulary": list(RISKS),
-        "reason_code_vocabulary": list(REASON_CODES),
-        "output_contract": decision_json_schema(),
-        "input": experiment_input,
-    }
-
-    body: dict[str, Any] = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system},
-            {"role": "user", "content": canonical_json(user_payload)},
-        ],
-    }
-
-    if request_json_schema:
-        body["response_format"] = {
-            "type": "json_schema",
-            "json_schema": {
-                "name": "atlas_governor_shadow_decision",
-                "strict": True,
-                "schema": decision_json_schema(),
+        "task_kind": {
+            "type": "choice",
+            "instructions": "Classify `task` by the requested repository work.",
+            "criteria": {
+                "bug_fix": "Correct behavior described as wrong, broken, or failing.",
+                "behavior_change": "Intentionally change runtime behavior or semantics.",
+                "api_change": "Change a public or consumed interface or contract.",
+                "refactor": "Restructure implementation while intending to preserve behavior.",
+                "configuration_change": "Primarily change configuration, defaults, or wiring.",
+                "audit": "Inspect, review, verify, assess impact, or explain.",
+                "unknown": "No category is sufficiently supported by the bounded state.",
             },
-        }
-
-    return body
-
-
-def strip_code_fence(text: str) -> str:
-    stripped = text.strip()
-    if stripped.startswith("```"):
-        lines = stripped.splitlines()
-        if lines and lines[0].startswith("```"):
-            lines = lines[1:]
-        if lines and lines[-1].strip() == "```":
-            lines = lines[:-1]
-        return "\n".join(lines).strip()
-    return stripped
-
-
-def extract_decision(provider_response: dict[str, Any]) -> dict[str, Any]:
-    choices = provider_response.get("choices")
-    if not isinstance(choices, list) or not choices:
-        raise ContractError("provider response has no choices")
-
-    first = choices[0]
-    if not isinstance(first, dict):
-        raise ContractError("provider response choice is not an object")
-
-    message = first.get("message")
-    if not isinstance(message, dict):
-        raise ContractError("provider response choice has no message object")
-
-    parsed = message.get("parsed")
-    if isinstance(parsed, dict):
-        decision = parsed
-    else:
-        content = message.get("content")
-        if isinstance(content, str):
-            raw = strip_code_fence(content)
-        elif isinstance(content, list):
-            text_parts = []
-            for part in content:
-                if isinstance(part, dict) and isinstance(part.get("text"), str):
-                    text_parts.append(part["text"])
-            raw = strip_code_fence("".join(text_parts))
-        else:
-            raise ContractError("provider response message has no parseable content")
-
-        try:
-            decision = json.loads(raw)
-        except json.JSONDecodeError as exc:
-            raise ContractError(f"JEV response is not valid JSON: {exc}") from exc
-
-    if not isinstance(decision, dict):
-        raise ContractError("JEV decision must be a JSON object")
-
-    validate_decision(decision)
-    return decision
+        },
+        "needs_escalation": {
+            "type": "noul",
+            "instructions": (
+                "Given `atlas.observed_route` when present and the rest of `atlas`, "
+                "is a deeper Atlas route likely required for sufficient project evidence?"
+            ),
+            "criteria": {
+                "true": "A deeper route is likely needed.",
+                "false": "The current/observed route is likely sufficient.",
+            },
+        },
+        "requires_history": {
+            "type": "noul",
+            "instructions": "Is temporal/history evidence likely necessary to complete `task` safely?",
+            "criteria": {
+                "true": "History is likely necessary.",
+                "false": "Current project state is likely sufficient.",
+            },
+        },
+        "requires_validation_plan": {
+            "type": "noul",
+            "instructions": (
+                "Does `task` likely require a nontrivial validation plan across tests, "
+                "effects, contracts, or affected areas?"
+            ),
+            "criteria": {
+                "true": "A nontrivial validation plan is likely needed.",
+                "false": "Validation is likely local/simple.",
+            },
+        },
+        "risk": {
+            "type": "score",
+            "instructions": (
+                "Rate project-context risk: the need for broader project evidence, "
+                "not the inherent difficulty of writing code."
+            ),
+            "criteria": [
+                "Minimal: explicit/local target and narrow blast radius.",
+                "Bounded: some relationships/tests matter but scope is contained.",
+                "Broad: cross-module/public-contract/validation concerns need broader evidence.",
+                "Uncertain: unresolved/conflicting/missing evidence makes scope unclear.",
+            ],
+        },
+    }
 
 
-def validate_decision(decision: dict[str, Any]) -> None:
+def request_shape(value: dict[str, Any], model: str) -> dict[str, Any]:
+    return {"model": model, "state": state_for(value), "questions": questions()}
+
+
+def validate_choice(answer: dict[str, Any], allowed: tuple[str, ...], name: str) -> None:
+    if answer.get("type") != "choice" or answer.get("choice") not in allowed:
+        raise ContractError(f"invalid {name} Choice answer")
+    if set(answer.get("probabilities", {})) != set(allowed):
+        raise ContractError(f"{name} probabilities must match the closed vocabulary")
+    confidence = answer.get("confidence")
+    if isinstance(confidence, bool) or not isinstance(confidence, (int, float)) or not 0 <= confidence <= 1:
+        raise ContractError(f"invalid {name} confidence")
+
+
+def validate_noul(answer: dict[str, Any], name: str) -> None:
+    probability = answer.get("noul")
+    if answer.get("type") != "noul" or isinstance(probability, bool) or not isinstance(probability, (int, float)) or not 0 <= probability <= 1:
+        raise ContractError(f"invalid {name} Noul answer")
+
+
+def validate_score(answer: dict[str, Any]) -> None:
+    score = answer.get("score")
+    confidence = answer.get("confidence")
+    if answer.get("type") != "score":
+        raise ContractError("invalid risk Score answer")
+    if isinstance(score, bool) or not isinstance(score, (int, float)) or not 0 <= score <= 3:
+        raise ContractError("invalid risk score")
+    if isinstance(confidence, bool) or not isinstance(confidence, (int, float)) or not 0 <= confidence <= 1:
+        raise ContractError("invalid risk confidence")
+
+
+def validate_judgments(value: dict[str, Any]) -> None:
     expected = {
-        "route",
-        "task_kind",
-        "requires_history",
-        "requires_validation_plan",
-        "risk",
-        "confidence",
-        "reasons",
+        "route", "task_kind", "needs_escalation",
+        "requires_history", "requires_validation_plan", "risk",
     }
-    actual = set(decision)
-    if actual != expected:
-        raise ContractError(
-            "JEV decision keys must exactly match the shadow contract; "
-            f"expected {sorted(expected)}, got {sorted(actual)}"
-        )
-
-    if decision["route"] not in ROUTES:
-        raise ContractError(f"invalid route: {decision['route']!r}")
-    if decision["task_kind"] not in TASK_KINDS:
-        raise ContractError(f"invalid task_kind: {decision['task_kind']!r}")
-    if decision["risk"] not in RISKS:
-        raise ContractError(f"invalid risk: {decision['risk']!r}")
-    if not isinstance(decision["requires_history"], bool):
-        raise ContractError("requires_history must be boolean")
-    if not isinstance(decision["requires_validation_plan"], bool):
-        raise ContractError("requires_validation_plan must be boolean")
-
-    confidence = decision["confidence"]
-    if isinstance(confidence, bool) or not isinstance(confidence, (int, float)):
-        raise ContractError("confidence must be numeric")
-    if not 0.0 <= float(confidence) <= 1.0:
-        raise ContractError("confidence must be between 0 and 1")
-
-    reasons = decision["reasons"]
-    if not isinstance(reasons, list) or len(reasons) > 8:
-        raise ContractError("reasons must be an array with at most 8 values")
-    if len(set(reasons)) != len(reasons):
-        raise ContractError("reasons must be unique")
-    invalid = [reason for reason in reasons if reason not in REASON_CODES]
-    if invalid:
-        raise ContractError(f"invalid reason code(s): {invalid}")
+    if set(value) != expected:
+        raise ContractError("judgment set does not match the experiment contract")
+    validate_choice(value["route"], ROUTES, "route")
+    validate_choice(value["task_kind"], TASK_KINDS, "task_kind")
+    validate_noul(value["needs_escalation"], "needs_escalation")
+    validate_noul(value["requires_history"], "requires_history")
+    validate_noul(value["requires_validation_plan"], "requires_validation_plan")
+    validate_score(value["risk"])
 
 
-def call_openrouter(
-    body: dict[str, Any],
-    endpoint: str,
-    api_key: str,
-    timeout_seconds: float,
-) -> dict[str, Any]:
-    request = urllib.request.Request(
-        endpoint,
-        data=canonical_json(body).encode("utf-8"),
-        method="POST",
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-            "X-Title": "Workspace Atlas JEV Governor Shadow",
+def normalize_response(response: Any) -> dict[str, Any]:
+    route = response.choices["route"]
+    task_kind = response.choices["task_kind"]
+    escalation = response.nouls["needs_escalation"]
+    history = response.nouls["requires_history"]
+    validation = response.nouls["requires_validation_plan"]
+    risk = response.scores["risk"]
+    result = {
+        "route": {
+            "type": "choice", "choice": route.choice,
+            "confidence": route.confidence, "probabilities": dict(route.probabilities),
         },
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
-            raw = response.read().decode("utf-8")
-    except urllib.error.HTTPError as exc:
-        body_text = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(
-            f"OpenRouter HTTP {exc.code}; response={body_text[:2000]}"
-        ) from exc
-    except urllib.error.URLError as exc:
-        raise RuntimeError(f"OpenRouter request failed: {exc.reason}") from exc
-
-    try:
-        value = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise RuntimeError("OpenRouter returned non-JSON content") from exc
-    if not isinstance(value, dict):
-        raise RuntimeError("OpenRouter response root is not an object")
-    return value
+        "task_kind": {
+            "type": "choice", "choice": task_kind.choice,
+            "confidence": task_kind.confidence, "probabilities": dict(task_kind.probabilities),
+        },
+        "needs_escalation": {"type": "noul", "noul": escalation.noul},
+        "requires_history": {"type": "noul", "noul": history.noul},
+        "requires_validation_plan": {"type": "noul", "noul": validation.noul},
+        "risk": {
+            "type": "score", "score": risk.score, "confidence": risk.confidence,
+            "legend": {str(k): v for k, v in risk.legend.items()},
+            "probabilities": {str(k): v for k, v in risk.probabilities.items()},
+        },
+    }
+    validate_judgments(result)
+    return result
 
 
-def envelope(
-    experiment_input: dict[str, Any],
-    model: str,
-    decision: dict[str, Any],
-    provider_response: dict[str, Any] | None,
-    include_task_text: bool,
-) -> dict[str, Any]:
-    input_hash = sha256_text(canonical_json(experiment_input))
-    task_hash = sha256_text(experiment_input["task"])
-    result: dict[str, Any] = {
+def envelope(value: dict[str, Any], requested_model: str, response: Any, judgments: dict[str, Any], include_task: bool) -> dict[str, Any]:
+    result = {
         "schema_version": SCHEMA_VERSION,
         "mode": "shadow",
         "authoritative": False,
         "runtime_effect": "none",
         "truth_plane_effect": "none",
-        "model": model,
-        "input_hash": input_hash,
-        "task_hash": task_hash,
-        "decision": decision,
+        "requested_model": requested_model,
+        "response_model": response.model,
+        "input_hash": sha256_text(canonical_json(value)),
+        "task_hash": sha256_text(value["task"]),
+        "judgments": judgments,
+        "usage": {
+            "input_tokens": response.usage.input_tokens,
+            "output_tokens": response.usage.output_tokens,
+        },
     }
-    if include_task_text:
-        result["task"] = experiment_input["task"]
-
-    if provider_response is not None:
-        response_model = provider_response.get("model")
-        if isinstance(response_model, str):
-            result["provider_response_model"] = response_model
-        usage = provider_response.get("usage")
-        if isinstance(usage, dict):
-            # Usage contains accounting metadata, not prompt/source content.
-            result["usage"] = usage
-
+    if include_task:
+        result["task"] = value["task"]
     return result
 
 
-def command_dry_run(args: argparse.Namespace) -> int:
+def dry_run(args: argparse.Namespace) -> int:
     value = load_json(args.input)
     validate_input(value)
-    body = build_request(value, args.model, args.request_json_schema)
-    output = {
+    print(json.dumps({
         "schema_version": SCHEMA_VERSION,
         "mode": "dry_run",
         "authoritative": False,
-        "warning": (
-            "The task text and bounded Atlas metadata shown in request_body "
-            "would be sent to the configured external endpoint."
-        ),
-        "endpoint": args.endpoint,
-        "request_body": body,
-    }
-    print(json.dumps(output, indent=2, ensure_ascii=False, sort_keys=True))
+        "request": request_shape(value, args.model),
+    }, indent=2, sort_keys=True))
     return 0
 
 
-def command_call(args: argparse.Namespace) -> int:
+def call(args: argparse.Namespace) -> int:
     value = load_json(args.input)
     validate_input(value)
-
-    api_key = os.environ.get("OPENROUTER_API_KEY")
-    if not api_key:
+    try:
+        from typesafe_sdk import TypeSafeClient
+    except ImportError as exc:
         raise ContractError(
-            "OPENROUTER_API_KEY is required for 'call'; use dry-run without credentials"
-        )
+            "The official TypeSafe Python SDK is required for the live call."
+        ) from exc
 
-    body = build_request(value, args.model, args.request_json_schema)
-    provider_response = call_openrouter(
-        body=body,
-        endpoint=args.endpoint,
-        api_key=api_key,
-        timeout_seconds=args.timeout_seconds,
-    )
-    decision = extract_decision(provider_response)
-    result = envelope(
-        experiment_input=value,
-        model=args.model,
-        decision=decision,
-        provider_response=provider_response,
-        include_task_text=args.include_task_text,
-    )
-    print(json.dumps(result, indent=2, ensure_ascii=False, sort_keys=True))
+    request = request_shape(value, args.model)
+    with TypeSafeClient(model=args.model, timeout=args.timeout_seconds) as client:
+        response = client.system_one(
+            state=request["state"],
+            questions=request["questions"],
+        )
+    result = envelope(value, args.model, response, normalize_response(response), args.include_task_text)
+    print(json.dumps(result, indent=2, sort_keys=True))
     return 0
 
 
-def command_self_test(_: argparse.Namespace) -> int:
+def self_test(_: argparse.Namespace) -> int:
     fixture = {
         "task": "Fix reconnect timeout without changing login semantics.",
         "atlas": {
@@ -441,140 +313,81 @@ def command_self_test(_: argparse.Namespace) -> int:
         },
     }
     validate_input(fixture)
-    body = build_request(fixture, DEFAULT_MODEL, request_json_schema=True)
-    assert body["model"] == DEFAULT_MODEL
-    assert body["response_format"]["json_schema"]["schema"]["additionalProperties"] is False
+    req = request_shape(fixture, DEFAULT_MODEL)
+    assert req["questions"]["route"]["type"] == "choice"
+    assert req["questions"]["needs_escalation"]["type"] == "noul"
+    assert req["questions"]["risk"]["type"] == "score"
 
-    fake_provider_response = {
-        "model": DEFAULT_MODEL,
-        "choices": [
-            {
-                "message": {
-                    "content": json.dumps(
-                        {
-                            "route": "ATLAS_DEEP",
-                            "task_kind": "behavior_change",
-                            "requires_history": False,
-                            "requires_validation_plan": True,
-                            "risk": "broad",
-                            "confidence": 0.84,
-                            "reasons": [
-                                "cross_module_scope",
-                                "validation_requirement",
-                            ],
-                        }
-                    )
-                }
-            }
-        ],
-        "usage": {"prompt_tokens": 100, "completion_tokens": 0},
+    fake = {
+        "route": {
+            "type": "choice", "choice": "ATLAS_DEEP", "confidence": 0.84,
+            "probabilities": {"DIRECT": 0.04, "ATLAS_LIGHT": 0.12, "ATLAS_DEEP": 0.84},
+        },
+        "task_kind": {
+            "type": "choice", "choice": "behavior_change", "confidence": 0.72,
+            "probabilities": {
+                "bug_fix": 0.12, "behavior_change": 0.72, "api_change": 0.04,
+                "refactor": 0.03, "configuration_change": 0.03, "audit": 0.01,
+                "unknown": 0.05,
+            },
+        },
+        "needs_escalation": {"type": "noul", "noul": 0.88},
+        "requires_history": {"type": "noul", "noul": 0.18},
+        "requires_validation_plan": {"type": "noul", "noul": 0.91},
+        "risk": {
+            "type": "score", "score": 2.1, "confidence": 0.74,
+            "legend": {"0": "Minimal", "1": "Bounded", "2": "Broad", "3": "Uncertain"},
+            "probabilities": {"0": 0.04, "1": 0.16, "2": 0.55, "3": 0.25},
+        },
     }
-    decision = extract_decision(fake_provider_response)
-    result = envelope(
-        fixture,
-        DEFAULT_MODEL,
-        decision,
-        fake_provider_response,
-        include_task_text=False,
-    )
-    assert result["authoritative"] is False
-    assert result["runtime_effect"] == "none"
-    assert "task" not in result
-    assert result["decision"]["route"] == "ATLAS_DEEP"
+    validate_judgments(fake)
+    assert "confidence" not in fake["needs_escalation"]
 
     try:
-        validate_input(
-            {
-                "task": "bad fixture",
-                "atlas": {"source_text": "do not transmit source"},
-            }
-        )
+        validate_input({"task": "bad", "atlas": {"source_text": "blocked"}})
     except ContractError:
         pass
     else:
-        raise AssertionError("raw-source guard did not reject source_text")
+        raise AssertionError("raw-source guard failed")
 
-    print(
-        json.dumps(
-            {
-                "ok": True,
-                "schema_version": SCHEMA_VERSION,
-                "tests": [
-                    "input_contract",
-                    "request_shape",
-                    "decision_validation",
-                    "redacted_output",
-                    "raw_source_rejection",
-                ],
-            },
-            indent=2,
-            sort_keys=True,
-        )
-    )
+    print(json.dumps({
+        "ok": True,
+        "schema_version": SCHEMA_VERSION,
+        "tests": [
+            "input_contract", "typed_question_shapes", "choice_probabilities",
+            "noul_probability_semantics", "score_semantics", "raw_source_rejection",
+        ],
+    }, indent=2, sort_keys=True))
     return 0
 
 
-def add_common_arguments(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--input", required=True, help="JSON input file, or '-' for stdin")
-    parser.add_argument("--model", default=DEFAULT_MODEL)
-    parser.add_argument("--endpoint", default=DEFAULT_ENDPOINT)
-    parser.add_argument(
-        "--request-json-schema",
-        action="store_true",
-        help=(
-            "Request OpenRouter JSON Schema structured output. Optional because "
-            "per-model parameter support must be proven by the experiment."
-        ),
-    )
+def parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(description="TypeSafe/JEV shadow evaluator; no Atlas runtime authority.")
+    sub = p.add_subparsers(dest="command", required=True)
 
+    d = sub.add_parser("dry-run")
+    d.add_argument("--input", required=True)
+    d.add_argument("--model", default=DEFAULT_MODEL)
+    d.set_defaults(func=dry_run)
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description=(
-            "Research-only JEV shadow adapter. It predicts Atlas Governor policy "
-            "but has no runtime or Truth Plane authority."
-        )
-    )
-    sub = parser.add_subparsers(dest="command", required=True)
+    c = sub.add_parser("call")
+    c.add_argument("--input", required=True)
+    c.add_argument("--model", default=DEFAULT_MODEL)
+    c.add_argument("--timeout-seconds", type=float, default=30.0)
+    c.add_argument("--include-task-text", action="store_true")
+    c.set_defaults(func=call)
 
-    dry = sub.add_parser("dry-run", help="validate input and print outbound request")
-    add_common_arguments(dry)
-    dry.set_defaults(func=command_dry_run)
-
-    call = sub.add_parser("call", help="explicitly call OpenRouter/JEV")
-    add_common_arguments(call)
-    call.add_argument("--timeout-seconds", type=float, default=30.0)
-    call.add_argument(
-        "--include-task-text",
-        action="store_true",
-        help="include raw task text in local output; default output stores only hashes",
-    )
-    call.set_defaults(func=command_call)
-
-    self_test = sub.add_parser("self-test", help="run contract/parser checks without network")
-    self_test.set_defaults(func=command_self_test)
-
-    return parser
+    s = sub.add_parser("self-test")
+    s.set_defaults(func=self_test)
+    return p
 
 
 def main() -> int:
-    parser = build_parser()
-    args = parser.parse_args()
     try:
+        args = parser().parse_args()
         return int(args.func(args))
-    except (ContractError, RuntimeError, OSError) as exc:
-        print(
-            json.dumps(
-                {
-                    "ok": False,
-                    "schema_version": SCHEMA_VERSION,
-                    "error": str(exc),
-                },
-                ensure_ascii=False,
-                sort_keys=True,
-            ),
-            file=sys.stderr,
-        )
+    except (ContractError, OSError, json.JSONDecodeError) as exc:
+        print(json.dumps({"ok": False, "schema_version": SCHEMA_VERSION, "error": str(exc)}), file=sys.stderr)
         return 2
 
 
