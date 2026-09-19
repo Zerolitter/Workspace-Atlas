@@ -8,31 +8,41 @@
 
 ## Question
 
-Can a small structured decision model predict the minimum useful Workspace Atlas
-context-acquisition depth for a task better than the current deterministic
-policy, without weakening Atlas truth, privacy, reproducibility, or source
-verification?
+Can TypeSafe JEV predict the minimum useful Workspace Atlas
+context-acquisition depth and selected policy flags better than the current
+deterministic policy, without weakening Atlas truth, privacy, reproducibility,
+or source verification?
 
-The first target is **route prediction**, not evidence generation:
+The first target is route prediction:
 
 ```text
 DIRECT | ATLAS_LIGHT | ATLAS_DEEP
 ```
 
-Secondary shadow decisions may include task kind, whether temporal/history
-evidence is likely to be useful, and whether a validation plan is likely to be
-required.
+Secondary shadow judgments cover task kind, whether the current route is likely
+to require escalation, whether history is necessary, whether a nontrivial
+validation plan is needed, and graded project-context risk.
 
-## Why JEV is a plausible experiment
+## Official TypeSafe programming model
 
-JEV 1.13 is currently exposed by OpenRouter as a TypeSafe structured decision
-model intended for routing/classification-style software decisions. This
-experiment treats that claim as a hypothesis to test, not as an Atlas
-assumption.
+This experiment follows the official `typesafe-ai` agent skill and current
+TypeSafe Python SDK contract.
 
-JEV is never a repository evidence provider. A prediction from JEV is not a
-symbol, relationship, source fact, coverage statement, conflict resolution, or
-generation fact.
+JEV is treated as a System One decision model, not a chat generator:
+
+- **Choice** selects one value from a defined set and returns a probability
+  distribution plus Choice confidence.
+- **Noul** returns the probability of a yes/true statement. It has no separate
+  confidence field; values near 0.5 are uncertain.
+- **Score** evaluates an ordered rubric and returns a probability-weighted score,
+  its distribution, and Score confidence.
+- Independent questions over the same state are sent together in one
+  `system_one` evaluation.
+- Typed output guarantees the interface, not truth. Thresholds and policy remain
+  Atlas/application decisions and must be evaluated on Atlas task data.
+
+Launch implementation reference: official Python SDK `typesafe-sdk 0.7.0`.
+The default model alias for this experiment is `jev-latest`.
 
 ## Non-negotiable architecture
 
@@ -51,17 +61,34 @@ generation fact.
                 JEV SHADOW ADAPTER
                          │
                          ▼
-                predicted route only
+                typed judgments only
                          │
                          ▼
                  comparison / metrics
 ```
 
-JEV must not sit on the authoritative execution path in this experiment.
+JEV never sits on the authoritative execution path in this experiment.
 
 The authoritative Atlas run happens exactly as it would without JEV. The shadow
-adapter may consume a bounded observation of the task and already-derived Atlas
-metadata and produce a prediction for later comparison.
+adapter consumes a bounded observation of the task and already-derived Atlas
+metadata and produces typed judgments for later comparison.
+
+## First judgment pack
+
+One shared state is evaluated with these independent questions:
+
+| ID | Primitive | Meaning |
+|---|---|---|
+| `route` | Choice | Minimum useful `DIRECT | ATLAS_LIGHT | ATLAS_DEEP` route |
+| `task_kind` | Choice | Atlas task-kind classification |
+| `needs_escalation` | Noul | Probability that a deeper route is needed than the observed/current route |
+| `requires_history` | Noul | Probability that temporal evidence is necessary |
+| `requires_validation_plan` | Noul | Probability that a nontrivial validation plan is needed |
+| `risk` | Score | Ordered project-context risk from minimal → bounded → broad → uncertain |
+
+No free-form rationale or chain-of-thought is requested. The experiment retains
+raw typed judgments and their probability distributions so later policy
+thresholds can be tested without rerunning inference.
 
 ## Data boundary
 
@@ -88,26 +115,27 @@ Not allowed by default:
 - environment dumps;
 - catalogue contents;
 - arbitrary repository excerpts;
+- diffs/patches;
 - provider outputs containing source text.
 
 The harness rejects obvious raw-source fields unless a future research revision
 explicitly changes this contract.
 
-## Privacy and provider boundary
+## Provider boundary
 
-Using OpenRouter/JEV sends the permitted experiment payload to an external
-service. It is therefore opt-in and must never be silently enabled by normal
-Atlas commands.
+The live experiment uses the official TypeSafe Python SDK and therefore remains
+explicitly opt-in.
 
 Requirements:
 
-1. `OPENROUTER_API_KEY` is read from the process environment only.
-2. The key is never written to experiment output.
-3. Network execution requires an explicit `call` action.
-4. `dry-run` must work without credentials and show the exact outbound body.
-5. Persisted output hashes task/input identity by default rather than copying
+1. Network execution requires the explicit `call` action.
+2. `dry-run` works without the SDK or credentials and prints the exact state,
+   model alias, and typed questions that would be submitted.
+3. Credential resolution/network transport belongs to the official SDK, not
+   Atlas or the shadow adapter.
+4. Persisted output hashes task/input identity by default rather than copying
    raw task text into the result.
-6. Atlas remains fully usable with no JEV/OpenRouter configuration.
+5. Atlas remains fully usable with no TypeSafe/JEV configuration.
 
 ## Input contract
 
@@ -133,95 +161,70 @@ Minimal JSON:
 }
 ```
 
-The contract is intentionally small. Do not feed Context IR or raw source into
-the first experiment simply because the model has a large context window.
+The first experiment deliberately does not send Context IR or raw source.
 
 ## Shadow output contract
 
-The adapter normalizes a JEV answer into:
+The adapter records raw primitive semantics rather than collapsing everything
+into one synthetic confidence:
 
 ```json
 {
-  "schema_version": "jev-governor-shadow-v0.1.0",
+  "schema_version": "jev-governor-shadow-v0.2.0",
   "authoritative": false,
-  "model": "typesafe/jev-1.13",
-  "input_hash": "...",
-  "task_hash": "...",
-  "decision": {
-    "route": "ATLAS_DEEP",
-    "task_kind": "behavior_change",
-    "requires_history": false,
-    "requires_validation_plan": true,
-    "risk": "broad",
-    "confidence": 0.84,
-    "reasons": [
-      "cross_module_scope",
-      "validation_requirement"
-    ]
+  "requested_model": "jev-latest",
+  "response_model": "jev-latest",
+  "judgments": {
+    "route": {
+      "type": "choice",
+      "choice": "ATLAS_DEEP",
+      "confidence": 0.84,
+      "probabilities": {
+        "DIRECT": 0.04,
+        "ATLAS_LIGHT": 0.12,
+        "ATLAS_DEEP": 0.84
+      }
+    },
+    "needs_escalation": {
+      "type": "noul",
+      "noul": 0.88
+    },
+    "risk": {
+      "type": "score",
+      "score": 2.1,
+      "confidence": 0.74
+    }
   }
 }
 ```
 
-No free-form rationale or chain-of-thought is required.
-
-## Closed route vocabulary
-
-- `DIRECT`
-- `ATLAS_LIGHT`
-- `ATLAS_DEEP`
-
-## Initial task-kind vocabulary
-
-Keep the first research vocabulary aligned with existing Atlas concepts rather
-than inventing a new ontology:
-
-- `bug_fix`
-- `behavior_change`
-- `api_change`
-- `refactor`
-- `configuration_change`
-- `audit`
-- `unknown`
-
-## Initial reason codes
-
-- `explicit_target_sufficient`
-- `bounded_relationships_needed`
-- `cross_module_scope`
-- `public_api_surface`
-- `unresolved_edges`
-- `conflict_state`
-- `temporal_requirement`
-- `validation_requirement`
-- `high_context_cost`
-- `unknown_task_kind`
-- `insufficient_metadata`
-
-The adapter validates this closed vocabulary. New reason codes require an
-experiment contract revision.
+Choice confidence must not be treated as overall workflow correctness. A Noul
+has no separate confidence field and must not be mislabeled as one.
 
 ## Evaluation
 
-For every eligible task, retain both:
+For every eligible task retain both:
 
 ```text
 A. what Atlas actually did
 B. what JEV predicted in shadow
 ```
 
-Then compare JEV against observed task evidence, not against human preference.
+Compare against observed task evidence and outcomes, not against JEV itself.
 
 Minimum useful fields:
 
-- deterministic Atlas route;
-- JEV predicted route;
-- confidence;
-- whether Atlas escalated after initial acquisition;
+- deterministic Atlas initial/final route;
+- JEV route distribution and Choice confidence;
+- JEV escalation/history/validation Noul probabilities;
+- JEV risk Score and distribution;
+- whether Atlas actually escalated;
 - supplied working-set size;
 - used working-set size;
 - context expansion;
 - source bytes/tokens;
-- local retrieval time/work units;
+- local retrieval work/latency;
+- TypeSafe input/output token usage;
 - accepted/rejected outcome when available;
 - Context Yield validity/report when available.
 
@@ -229,24 +232,23 @@ Minimum useful fields:
 
 ### H1 — Route prediction
 
-JEV predictions correlate with the minimum route that produced sufficient
-evidence for accepted tasks.
+JEV route probabilities correlate with the minimum route that produced
+sufficient evidence for accepted tasks.
 
 ### H2 — Escalation prediction
 
-A low-confidence/light prediction plus Atlas metadata can identify tasks that
-later require escalation to DEEP.
+The `needs_escalation` Noul meaningfully predicts when an initial Atlas route
+later required a deeper route.
 
 ### H3 — Cost usefulness
 
-Using JEV as a shadow predictor is cheap enough that a future policy experiment
-could plausibly save more Atlas/model work than the decision call costs.
+The System One evaluation is cheap enough that a future policy experiment could
+plausibly save more Atlas/model work than the decision call costs.
 
 ### H4 — Calibration
 
-JEV confidence has useful empirical meaning. Confidence bins should be compared
-against observed route/task outcomes; do not assume calibration from vendor
-claims.
+Choice/Score confidence and Noul probabilities have useful empirical meaning on
+Atlas tasks. Calibration is measured; it is not assumed from model claims.
 
 ## Promotion gates
 
@@ -261,27 +263,30 @@ No JEV result may influence production routing until all are true:
 - deterministic policy remains available as a full fallback;
 - an accepted ADR authorizes any runtime authority.
 
-Even after promotion, prediction must remain separate from project truth.
+Even after promotion, prediction remains separate from project truth.
 
 ## Harness
 
-`scripts/jev-governor-shadow.py` is the first research adapter.
+`scripts/jev-governor-shadow.py` is the research adapter.
 
-Examples:
-
-```powershell
-python scripts/jev-governor-shadow.py dry-run --input .\jev-task.json
-```
-
-```powershell
-$env:OPENROUTER_API_KEY = "<key>"
-python scripts/jev-governor-shadow.py call --input .\jev-task.json
-```
-
-Run the local parser/contract test without network access:
+Offline contract test:
 
 ```powershell
 python scripts/jev-governor-shadow.py self-test
+```
+
+Inspect the exact TypeSafe state/questions without a network call:
+
+```powershell
+python scripts/jev-governor-shadow.py dry-run --input .\specs\roadmap-v15-v20\jev-shadow-example.json
+```
+
+For a live launch test, install the official SDK using your chosen Python
+environment, configure it according to TypeSafe's current SDK documentation, and
+run:
+
+```powershell
+python scripts/jev-governor-shadow.py call --input .\specs\roadmap-v15-v20\jev-shadow-example.json
 ```
 
 ## Explicit exclusions
@@ -295,8 +300,9 @@ This experiment does not:
 - add MCP authority;
 - transmit source by default;
 - replace deterministic task classification;
+- convert JEV predictions into evidence;
 - make performance claims;
 - train or fine-tune a model.
 
-Its only job is to generate **comparable shadow evidence** for deciding whether
-a later adaptive-policy experiment is justified.
+Its only job is to generate comparable shadow evidence for deciding whether a
+later adaptive-policy experiment is justified.
