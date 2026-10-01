@@ -1,0 +1,259 @@
+{
+  "schema_version": "atlas-context-qualification-input-v1.0.0",
+  "kind": "atlas-context-qualification-input",
+  "observation": {
+    "schema_version": "atlas-context-qualification-observation-v1.0.0",
+    "kind": "atlas-context-qualification-observation",
+    "observation_id": "qualification-fixture-b",
+    "packet": {
+      "task_id": "single-file-canonical-id-whitespace",
+      "corpus_sha256": "10ab436d1e29c8907b44cf2f393086965214285c226150eb6ce9e5968fb7fa60",
+      "task_spec_sha256": "b5de488651d0e4162c42745a5abb79789a0d8eb64102ec8c61b02d8b71c8b481",
+      "validation_contract_sha256": "a96199728afb1e4a4b6fa2ae71bbab073da15abfb1bcac82dabb3ab501711def",
+      "workspace_identity_sha256": "aaa77319aca163fe1f04e2b1a259fb96e273f464823c2e4805681bb9695b1164",
+      "repository_commit_before": "f5f5c1e500c34fb9eeda6b8aa97ef24bd964246a",
+      "atlas_generation_before": "gen_fixture_001",
+      "source_snapshot_sha256_before": "34a36fe4e85bce3ee3d0df787228ffb4d6acffe075a91dae58c8ae35c6667f4d",
+      "policies": {
+        "configuration_sha256": "b7d64a9221007dfd5390f7df6cd5b8f3ea4f82faa1237141e35ebf161f5511a1",
+        "provider_configuration_sha256": "e6add8748d635b1256428ad5bf02d8b71dd89690701676d191a9202f94607564",
+        "model_identity_sha256": "e6954ed9cce48114b2875996c433c4ada96795c4f7b5401b3ed7578086bbe242",
+        "agent_identity_sha256": "e139fba95d43a8acd9d4f58e7bcedc60e7dab4eefe815dacc62a043877a99b59",
+        "tool_configuration_sha256": "7283e91e72cecf50e432ccc7dbcf31e80ae10dc9818dceb0e157f42e3aaca258",
+        "planner": "planner-v2.0.0",
+        "projection": "projection-v2.0.0",
+        "context_ir": "2.0.0",
+        "estimator": "context-estimator-v1.0.0",
+        "metric": "context-qualification-v1.0.0"
+      },
+      "route": "ATLAS_DEEP",
+      "budget": {
+        "max_records": 40,
+        "max_source_bytes": 2000,
+        "max_estimated_tokens": 1000,
+        "max_work_units": 100,
+        "controlled_dimension": "max_records"
+      },
+      "observation_coverage": {
+        "atlas_cost": true,
+        "context_cost": true,
+        "agent_cost": true,
+        "read_requests": true,
+        "reported_use": true,
+        "task_result": true,
+        "validation": true
+      },
+      "sample_case_set_sha256": "7b4dd5be21921992c9e369a9e441cc5d6f50a2ef7c89b9cad1cc14488883a416"
+    },
+    "packet_sha256": "d43d5ae1692af07088b4c6d26ac84aa95b4e04184dbd821cb581776ef5cac773",
+    "after_binding": {
+      "repository_commit_after": "f5f5c1e500c34fb9eeda6b8aa97ef24bd964246a",
+      "atlas_generation_after": "gen_fixture_001",
+      "source_snapshot_sha256_after": "34a36fe4e85bce3ee3d0df787228ffb4d6acffe075a91dae58c8ae35c6667f4d"
+    },
+    "supplied": [
+      {
+        "identity": {
+          "kind": "symbol",
+          "id": "native:src/context_metrics.rs::CanonicalEvidenceId::entity",
+          "range": {
+            "path": "src/context_metrics.rs",
+            "start_line": 77,
+            "end_line": 109
+          }
+        },
+        "source_revision_sha256": "2f27ff7f5be6cf9c2ea7d29d376f64f95578fd2b75c1c30e2d5af05f5eb8b6b7",
+        "provenance_sha256": "20bc42d99dd20657dc78023397e23136e1da07228e34996ebca96b39f9fcb304",
+        "benchmark_locator": {
+          "id": "src/context_metrics.rs::CanonicalEvidenceId::entity",
+          "mapping_sha256": "693a289eb561541bd8c1369ab3f172d6f25406052ebf04a63efdd04694c2fdb4",
+          "verified": true
+        },
+        "source_bytes": 100,
+        "selected_span_bytes": 80
+      },
+      {
+        "identity": {
+          "kind": "symbol",
+          "id": "native:src/context_metrics.rs::CanonicalEvidenceId::range",
+          "range": {
+            "path": "src/context_metrics.rs",
+            "start_line": 112,
+            "end_line": 129
+          }
+        },
+        "source_revision_sha256": "2f27ff7f5be6cf9c2ea7d29d376f64f95578fd2b75c1c30e2d5af05f5eb8b6b7",
+        "provenance_sha256": "4e54c5136d7355fdcf758ad074edc291ffb904a5d4067fc8f20acdaee3673500",
+        "benchmark_locator": {
+          "id": "src/context_metrics.rs::CanonicalEvidenceId::range",
+          "mapping_sha256": "01fcee35876d2005f9a48ef4774b407537fac329c5b71395a78254219684857c",
+          "verified": true
+        },
+        "source_bytes": 300,
+        "selected_span_bytes": 150
+      }
+    ],
+    "read_requests": [
+      {
+        "identity": {
+          "kind": "symbol",
+          "id": "native:src/context_metrics.rs::CanonicalEvidenceId::entity",
+          "range": {
+            "path": "src/context_metrics.rs",
+            "start_line": 77,
+            "end_line": 109
+          }
+        },
+        "source_revision_sha256": "2f27ff7f5be6cf9c2ea7d29d376f64f95578fd2b75c1c30e2d5af05f5eb8b6b7",
+        "provenance_sha256": "20bc42d99dd20657dc78023397e23136e1da07228e34996ebca96b39f9fcb304",
+        "benchmark_locator": {
+          "id": "src/context_metrics.rs::CanonicalEvidenceId::entity",
+          "mapping_sha256": "693a289eb561541bd8c1369ab3f172d6f25406052ebf04a63efdd04694c2fdb4",
+          "verified": true
+        }
+      },
+      {
+        "identity": {
+          "kind": "symbol",
+          "id": "native:src/context_metrics.rs::CanonicalEvidenceId::entity",
+          "range": {
+            "path": "src/context_metrics.rs",
+            "start_line": 77,
+            "end_line": 109
+          }
+        },
+        "source_revision_sha256": "2f27ff7f5be6cf9c2ea7d29d376f64f95578fd2b75c1c30e2d5af05f5eb8b6b7",
+        "provenance_sha256": "20bc42d99dd20657dc78023397e23136e1da07228e34996ebca96b39f9fcb304",
+        "benchmark_locator": {
+          "id": "src/context_metrics.rs::CanonicalEvidenceId::entity",
+          "mapping_sha256": "693a289eb561541bd8c1369ab3f172d6f25406052ebf04a63efdd04694c2fdb4",
+          "verified": true
+        }
+      },
+      {
+        "identity": {
+          "kind": "file",
+          "id": "native:src/expanded.rs",
+          "range": null
+        },
+        "source_revision_sha256": "b98c3c6b490e9016f561f8a39d611145db73001b3e992e750de0ec7ed49e0632",
+        "provenance_sha256": "e54b6a1103412f28a16f8277099e7303da116c424ca7f321cc3cb101c704fa0d",
+        "benchmark_locator": null
+      }
+    ],
+    "reported_used": [
+      {
+        "identity": {
+          "kind": "symbol",
+          "id": "native:src/context_metrics.rs::CanonicalEvidenceId::range",
+          "range": {
+            "path": "src/context_metrics.rs",
+            "start_line": 112,
+            "end_line": 129
+          }
+        },
+        "source_revision_sha256": "2f27ff7f5be6cf9c2ea7d29d376f64f95578fd2b75c1c30e2d5af05f5eb8b6b7",
+        "provenance_sha256": "4e54c5136d7355fdcf758ad074edc291ffb904a5d4067fc8f20acdaee3673500",
+        "benchmark_locator": {
+          "id": "src/context_metrics.rs::CanonicalEvidenceId::range",
+          "mapping_sha256": "01fcee35876d2005f9a48ef4774b407537fac329c5b71395a78254219684857c",
+          "verified": true
+        }
+      },
+      {
+        "identity": {
+          "kind": "file",
+          "id": "native:src/expanded.rs",
+          "range": null
+        },
+        "source_revision_sha256": "b98c3c6b490e9016f561f8a39d611145db73001b3e992e750de0ec7ed49e0632",
+        "provenance_sha256": "e54b6a1103412f28a16f8277099e7303da116c424ca7f321cc3cb101c704fa0d",
+        "benchmark_locator": null
+      }
+    ],
+    "atlas_cost": {
+      "cpu_ms": null,
+      "io_read_bytes": 4096,
+      "io_write_bytes": 0,
+      "db_work_units": 7,
+      "visited_edges": 4,
+      "processed_files": 2,
+      "provider_scopes": 1,
+      "work_units": 10,
+      "retrieval_duration_ms": 5.0,
+      "retrieval_environment_sha256": "ba5285161ba6eed0085fb13784ce5c92f70ebc268b94fd66aa1d68a32884204d"
+    },
+    "context_cost": {
+      "records": 2,
+      "supplied_source_bytes": 400,
+      "selected_source_span_bytes": 230,
+      "estimated_tokens": 120,
+      "working_set": [
+        {
+          "kind": "symbol",
+          "id": "native:src/context_metrics.rs::CanonicalEvidenceId::entity",
+          "range": {
+            "path": "src/context_metrics.rs",
+            "start_line": 77,
+            "end_line": 109
+          }
+        },
+        {
+          "kind": "symbol",
+          "id": "native:src/context_metrics.rs::CanonicalEvidenceId::range",
+          "range": {
+            "path": "src/context_metrics.rs",
+            "start_line": 112,
+            "end_line": 129
+          }
+        }
+      ]
+    },
+    "agent_cost": {
+      "input_tokens": 800,
+      "output_tokens": 200,
+      "tool_calls": 3,
+      "independent_reads": 2,
+      "expansion": 1,
+      "rediscovery": 2
+    },
+    "acquisition": {
+      "status": "sufficient",
+      "coverage": "complete",
+      "native": false
+    },
+    "task_result": {
+      "agent_reported_accepted": true,
+      "tests_validation": [
+        "synthetic focused context metric contract"
+      ],
+      "correct_target": true,
+      "correctness": true,
+      "outcome_artifact_sha256": "4ec64672d569b6e54d60dee2e6ef0a23b76b644b8f0ba352b9d8115c02dc562e",
+      "time_to_correct_target_ms": 12.0,
+      "time_to_accepted_result_ms": 20.0
+    },
+    "error": null
+  },
+  "validation_receipt": {
+    "schema_version": "atlas-context-qualification-validation-receipt-v1.0.0",
+    "kind": "atlas-context-qualification-validation-receipt",
+    "receipt_id": "qualification-receipt-b",
+    "task_id": "single-file-canonical-id-whitespace",
+    "corpus_sha256": "10ab436d1e29c8907b44cf2f393086965214285c226150eb6ce9e5968fb7fa60",
+    "task_spec_sha256": "b5de488651d0e4162c42745a5abb79789a0d8eb64102ec8c61b02d8b71c8b481",
+    "validation_contract_sha256": "a96199728afb1e4a4b6fa2ae71bbab073da15abfb1bcac82dabb3ab501711def",
+    "packet_sha256": "d43d5ae1692af07088b4c6d26ac84aa95b4e04184dbd821cb581776ef5cac773",
+    "observation_sha256": "c00bb88d1146167131ac1393a58351bd51cacbc4c4dbc62911cb8ef2fd072993",
+    "workspace_identity_sha256": "aaa77319aca163fe1f04e2b1a259fb96e273f464823c2e4805681bb9695b1164",
+    "repository_commit": "f5f5c1e500c34fb9eeda6b8aa97ef24bd964246a",
+    "atlas_generation": "gen_fixture_001",
+    "source_snapshot_sha256": "34a36fe4e85bce3ee3d0df787228ffb4d6acffe075a91dae58c8ae35c6667f4d",
+    "policies_sha256": "776f0c25da700b822284d60ceb967ba09ed6f23dd4e13ed962c61c5dc7502614",
+    "outcome_artifact_sha256": "4ec64672d569b6e54d60dee2e6ef0a23b76b644b8f0ba352b9d8115c02dc562e",
+    "validation_outcome": "passed",
+    "attestation_kind": "validator_reported",
+    "evidence_summary": "Synthetic fixture validator reports the focused acceptance procedure passed.",
+    "validator_identity_sha256": "ece5eff42e707cc459556a692854738e86a053292ae2b9d85c9ca7202af4027e"
+  }
+}

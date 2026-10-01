@@ -1,0 +1,461 @@
+{
+  "schema_version": "atlas-context-qualification-corpus-v1.0.0",
+  "kind": "atlas-context-qualification-corpus",
+  "repository": {
+    "commit": "f5f5c1e500c34fb9eeda6b8aa97ef24bd964246a",
+    "object_format": "sha1",
+    "source_content_hash": "sha256"
+  },
+  "locator_contract": {
+    "namespace": "benchmark",
+    "native_identity_equivalence": false,
+    "native_normalization_adapter": "required_not_implemented"
+  },
+  "tasks": [
+    {
+      "task_id": "single-file-canonical-id-whitespace",
+      "task_class": "single_file_change",
+      "specification": "In src/context_metrics.rs, make canonical evidence entity and range identifiers reject leading or trailing whitespace while preserving identifiers that are valid without boundary whitespace and preserving range ordering.",
+      "requirement_coverage": "known",
+      "required_evidence": [
+        {
+          "kind": "symbol",
+          "id": "src/context_metrics.rs::CanonicalEvidenceId::entity",
+          "range": {"path": "src/context_metrics.rs", "start_line": 77, "end_line": 109},
+          "source_revision_sha256": "2f27ff7f5be6cf9c2ea7d29d376f64f95578fd2b75c1c30e2d5af05f5eb8b6b7"
+        },
+        {
+          "kind": "symbol",
+          "id": "src/context_metrics.rs::CanonicalEvidenceId::range",
+          "range": {"path": "src/context_metrics.rs", "start_line": 112, "end_line": 129},
+          "source_revision_sha256": "2f27ff7f5be6cf9c2ea7d29d376f64f95578fd2b75c1c30e2d5af05f5eb8b6b7"
+        }
+      ],
+      "uncertainty_boundaries": [
+        "Whitespace inside an identifier remains data and is not normalized.",
+        "This task does not redefine canonical range endpoints or evidence kinds."
+      ],
+      "validation_method": {
+        "kind": "focused_test",
+        "description": "Exercise entity and range construction with valid identifiers, whitespace-only identifiers, and identifiers with leading or trailing whitespace."
+      },
+      "accepted_outcome_criteria": [
+        "Leading and trailing whitespace is rejected for entity and range identities.",
+        "Identifiers that were valid without boundary whitespace and existing range ordering behavior remain unchanged.",
+        "The focused context-metrics tests pass against the frozen task checkout."
+      ]
+    },
+    {
+      "task_id": "cross-module-generation-change-source-reference",
+      "task_class": "cross_module_behavior",
+      "specification": "Ensure a generation change during Governor-routed LIGHT exact-source acquisition terminates with an explicit generation-changed result and exposes no source reference from the replacement generation.",
+      "requirement_coverage": "partial",
+      "required_evidence": [
+        {
+          "kind": "symbol",
+          "id": "src/context_application.rs::dispatch_catalogue_context_application",
+          "range": {"path": "src/context_application.rs", "start_line": 1677, "end_line": 1765},
+          "source_revision_sha256": "6d9e3189902da47c2f1cbfc54e33bed54d28fdc7477fad4b120a1546035235fd"
+        },
+        {
+          "kind": "symbol",
+          "id": "src/context_route.rs::execute_context_route",
+          "range": {"path": "src/context_route.rs", "start_line": 2015, "end_line": 2280},
+          "source_revision_sha256": "f6e406bf6f87779ef7663ea100796dd50029284d7de3a82d4a43efff8adb298a"
+        },
+        {
+          "kind": "test",
+          "id": "tests/exact_source_compiler.rs::generation_drift_fails_closed_before_any_source_is_sealed",
+          "range": {"path": "tests/exact_source_compiler.rs", "start_line": 515, "end_line": 532},
+          "source_revision_sha256": "64015ddca70912aa7b769b617f4fb15aa3c125c5b61070b5082ea03fc521e0fa"
+        }
+      ],
+      "uncertainty_boundaries": [
+        "The existing generation-drift test proves V2 compiler sealing fails closed; it does not by itself prove Governor-specific LIGHT behavior.",
+        "No durable V2 task session or public Context IR change is implied.",
+        "Additional exact-source and Governor call sites must be discovered and reported rather than silently omitted."
+      ],
+      "validation_method": {
+        "kind": "integration_test",
+        "description": "Inject a generation change between route decision and source verification, then inspect the terminal execution and returned LIGHT payload."
+      },
+      "accepted_outcome_criteria": [
+        "The request never combines evidence from two generations.",
+        "The terminal result identifies generation change rather than generic unavailability.",
+        "No source reference or materialized bytes from the replacement generation are returned."
+      ]
+    },
+    {
+      "task_id": "api-context-execution-counters-accessor",
+      "task_class": "api",
+      "specification": "Add a public, allocation-free ContextExecution accessor that returns the aggregate ContextExecutionCounters for every terminal execution variant without changing serialized contracts.",
+      "requirement_coverage": "known",
+      "required_evidence": [
+        {
+          "kind": "symbol",
+          "id": "src/context_route.rs::ContextExecution",
+          "range": {"path": "src/context_route.rs", "start_line": 1165, "end_line": 1214},
+          "source_revision_sha256": "f6e406bf6f87779ef7663ea100796dd50029284d7de3a82d4a43efff8adb298a"
+        },
+        {
+          "kind": "symbol",
+          "id": "src/context_route.rs::ContextExecution::state",
+          "range": {"path": "src/context_route.rs", "start_line": 1400, "end_line": 1528},
+          "source_revision_sha256": "f6e406bf6f87779ef7663ea100796dd50029284d7de3a82d4a43efff8adb298a"
+        },
+        {
+          "kind": "file",
+          "id": "src/lib.rs",
+          "range": {"path": "src/lib.rs", "start_line": 1, "end_line": 39},
+          "source_revision_sha256": "a95d0cdc38868e1b0256c4c289201582a5452f36da638e0967e315a782e674d4"
+        }
+      ],
+      "uncertainty_boundaries": [
+        "The accessor must not introduce a new wire field or schema version.",
+        "The corpus does not prescribe a borrowed versus copied return type if both remain allocation-free."
+      ],
+      "validation_method": {
+        "kind": "public_api_test",
+        "description": "Construct every ContextExecution variant with distinct counters and assert the accessor returns the stored aggregate exactly."
+      },
+      "accepted_outcome_criteria": [
+        "All execution variants expose their aggregate counters through one public accessor.",
+        "No serialization output or existing constructor behavior changes.",
+        "The accessor performs no heap allocation."
+      ]
+    },
+    {
+      "task_id": "configuration-project-marker-validation",
+      "task_class": "configuration",
+      "specification": "Validate provider project_markers as nonempty normalized relative marker paths: reject absolute paths, parent traversal, backslashes, NUL, and duplicate entries while preserving the packaged example configuration.",
+      "requirement_coverage": "known",
+      "required_evidence": [
+        {
+          "kind": "config",
+          "id": "src/config.rs::ProviderConfigEntry.project_markers",
+          "range": {"path": "src/config.rs", "start_line": 376, "end_line": 417},
+          "source_revision_sha256": "d948138f2910569ddd475b1cf98e14c5660e0ed0b469b7869eca17fd096f3a03"
+        },
+        {
+          "kind": "symbol",
+          "id": "src/config.rs::Config::validate",
+          "range": {"path": "src/config.rs", "start_line": 528, "end_line": 621},
+          "source_revision_sha256": "d948138f2910569ddd475b1cf98e14c5660e0ed0b469b7869eca17fd096f3a03"
+        },
+        {
+          "kind": "config",
+          "id": "config/workspace-atlas-v1.1.config.example.toml",
+          "range": {"path": "config/workspace-atlas-v1.1.config.example.toml", "start_line": 1, "end_line": 128},
+          "source_revision_sha256": "c022feb766c67a0a661b656ab679afd2bad41deec707a07bacf1edb293f45fb4"
+        }
+      ],
+      "uncertainty_boundaries": [
+        "Marker existence is evaluated at provider scope discovery time, not during configuration parsing.",
+        "This task does not change provider command resolution or shell policy."
+      ],
+      "validation_method": {
+        "kind": "configuration_test",
+        "description": "Parse the packaged example and focused malformed marker tables, including duplicate and platform-specific absolute spellings."
+      },
+      "accepted_outcome_criteria": [
+        "Every forbidden marker spelling fails configuration validation.",
+        "Distinct normalized relative marker paths remain accepted in declaration order.",
+        "The packaged public configuration still parses successfully."
+      ]
+    },
+    {
+      "task_id": "bug-fix-cluster-permutation-determinism",
+      "task_class": "bug_fix",
+      "specification": "Fix evidence-cluster projection so permutations of the same facts produce byte-identical corroborating_fact_ids and all_fact_ids ordering without changing the preferred fact policy.",
+      "requirement_coverage": "known",
+      "required_evidence": [
+        {
+          "kind": "symbol",
+          "id": "src/resolution.rs::preference_key",
+          "range": {"path": "src/resolution.rs", "start_line": 407, "end_line": 424},
+          "source_revision_sha256": "6984ac80e232f5d5cad8d566ffd15552a4d82f6ac1335ffc04e2fb1f7493b9bc"
+        },
+        {
+          "kind": "symbol",
+          "id": "src/resolution.rs::project_cluster",
+          "range": {"path": "src/resolution.rs", "start_line": 426, "end_line": 472},
+          "source_revision_sha256": "6984ac80e232f5d5cad8d566ffd15552a4d82f6ac1335ffc04e2fb1f7493b9bc"
+        }
+      ],
+      "uncertainty_boundaries": [
+        "The preference ranking itself is frozen for this task.",
+        "Persistence row ordering beyond the projected fact-id arrays is outside scope."
+      ],
+      "validation_method": {
+        "kind": "permutation_test",
+        "description": "Project all input permutations for corroborating and conflicting fixtures and compare complete outcomes."
+      },
+      "accepted_outcome_criteria": [
+        "Every permutation of an identical fact set produces an equal ClusterOutcome.",
+        "The same fact remains preferred under the existing ranking policy.",
+        "No fact is dropped from corroboration or conflict output."
+      ]
+    },
+    {
+      "task_id": "refactor-route-escalation-predicate",
+      "task_class": "refactor",
+      "specification": "Consolidate the duplicated route-escalation eligibility predicate in src/context_route.rs into one private helper with no behavior, serialization, allocation, or ordering change.",
+      "requirement_coverage": "known",
+      "required_evidence": [
+        {
+          "kind": "symbol",
+          "id": "src/context_route.rs::valid_attempt_transition",
+          "range": {"path": "src/context_route.rs", "start_line": 1343, "end_line": 1395},
+          "source_revision_sha256": "f6e406bf6f87779ef7663ea100796dd50029284d7de3a82d4a43efff8adb298a"
+        },
+        {
+          "kind": "symbol",
+          "id": "src/context_route.rs::light_deficits_can_escalate",
+          "range": {"path": "src/context_route.rs", "start_line": 1906, "end_line": 1924},
+          "source_revision_sha256": "f6e406bf6f87779ef7663ea100796dd50029284d7de3a82d4a43efff8adb298a"
+        },
+        {
+          "kind": "test",
+          "id": "tests/context_route_decision.rs::execution_state_invariants_separate_attempts_and_final_route_from_decision",
+          "range": {"path": "tests/context_route_decision.rs", "start_line": 255, "end_line": 356},
+          "source_revision_sha256": "ca9c7101f878f65acaa67d1b9b3168515208f408f4d1d6171264a24ed1c4ad1d"
+        }
+      ],
+      "uncertainty_boundaries": [
+        "Only exact semantic duplication is in scope.",
+        "Public types and diagnostic vocabularies remain unchanged."
+      ],
+      "validation_method": {
+        "kind": "behavior_preservation_test",
+        "description": "Run the existing route decision and execution invariant cases before and after the refactor and compare serialized decisions."
+      },
+      "accepted_outcome_criteria": [
+        "One private predicate defines escalation eligibility.",
+        "Existing positive and negative escalation cases are unchanged.",
+        "Serialized route decisions and executions remain byte-identical for fixed fixtures."
+      ]
+    },
+    {
+      "task_id": "rename-zero-denominator-invalidity",
+      "task_class": "rename",
+      "specification": "Rename the Rust ContextMetricInvalidity::ZeroDenominator variant to UnavailableZeroDenominator and migrate references to that Rust type as a clean cutover without changing ContextYieldMetricInvalidity or the public wire spelling zero_denominator.",
+      "requirement_coverage": "partial",
+      "required_evidence": [
+        {
+          "kind": "symbol",
+          "id": "src/context_metrics.rs::ContextMetricInvalidity::ZeroDenominator",
+          "range": {"path": "src/context_metrics.rs", "start_line": 180, "end_line": 215},
+          "source_revision_sha256": "2f27ff7f5be6cf9c2ea7d29d376f64f95578fd2b75c1c30e2d5af05f5eb8b6b7"
+        },
+        {
+          "kind": "symbol",
+          "id": "src/context_yield.rs::ContextYieldMetricInvalidity",
+          "range": {"path": "src/context_yield.rs", "start_line": 635, "end_line": 660},
+          "source_revision_sha256": "b662eee4f0fb535c36f569095ff4b5b4a15eb4e72d0a5711ed6c7182dead7d71"
+        },
+        {
+          "kind": "test",
+          "id": "tests/context_metrics.rs::zero_denominators_are_typed_undefined_values",
+          "range": {"path": "tests/context_metrics.rs", "start_line": 138, "end_line": 152},
+          "source_revision_sha256": "199a4ba90d4c98accf74f17c982bd1d7c9ff4bbcb9b5cad129f9fb97d952fe1e"
+        }
+      ],
+      "uncertainty_boundaries": [
+        "All references to the Rust ContextMetricInvalidity variant must be discovered at execution time; this locator list is intentionally partial.",
+        "ContextYieldMetricInvalidity::ZeroDenominator and the existing wire spelling zero_denominator remain unchanged."
+      ],
+      "validation_method": {
+        "kind": "reference_and_test_validation",
+        "description": "Resolve all symbol references, perform the rename, then run focused metric and Context Yield contract tests."
+      },
+      "accepted_outcome_criteria": [
+        "No old reference to ContextMetricInvalidity::ZeroDenominator or alias for that Rust variant remains.",
+        "Typed unavailable denominator behavior is unchanged.",
+        "ContextYieldMetricInvalidity and serialized zero_denominator contracts remain byte-for-byte unchanged."
+      ]
+    },
+    {
+      "task_id": "test-sensitive-context-metric-capacity-boundary",
+      "task_class": "test_sensitive_change",
+      "specification": "Add focused boundary coverage proving that the combined raw supplied/read/reported/changed observation count accepts exactly 4096 entries and rejects 4097 before metric derivation.",
+      "requirement_coverage": "known",
+      "required_evidence": [
+        {
+          "kind": "symbol",
+          "id": "src/context_metrics.rs::MAX_CONTEXT_METRIC_EVIDENCE",
+          "range": {"path": "src/context_metrics.rs", "start_line": 8, "end_line": 17},
+          "source_revision_sha256": "2f27ff7f5be6cf9c2ea7d29d376f64f95578fd2b75c1c30e2d5af05f5eb8b6b7"
+        },
+        {
+          "kind": "range",
+          "id": "corpus-region:src/context_metrics.rs:derive-context-metrics-capacity-check",
+          "range": {"path": "src/context_metrics.rs", "start_line": 251, "end_line": 271},
+          "source_revision_sha256": "2f27ff7f5be6cf9c2ea7d29d376f64f95578fd2b75c1c30e2d5af05f5eb8b6b7"
+        },
+        {
+          "kind": "test",
+          "id": "tests/context_metrics.rs::conflicting_or_unbounded_evidence_fails_with_typed_invalidity",
+          "range": {"path": "tests/context_metrics.rs", "start_line": 157, "end_line": 188},
+          "source_revision_sha256": "199a4ba90d4c98accf74f17c982bd1d7c9ff4bbcb9b5cad129f9fb97d952fe1e"
+        }
+      ],
+      "uncertainty_boundaries": [
+        "The bound value and combined-count semantics are frozen; this task adds qualification, not a policy change.",
+        "Memory or timing performance claims are outside this test."
+      ],
+      "validation_method": {
+        "kind": "boundary_test",
+        "description": "Construct mixed evidence vectors totaling 4096 and 4097 raw entries and assert the exact typed outcomes."
+      },
+      "accepted_outcome_criteria": [
+        "A mixed 4096-entry input derives metrics successfully.",
+        "A mixed 4097-entry input returns CapacityExceeded with limit 4096 and actual 4097.",
+        "The test does not infer capacity from deduplicated set size."
+      ]
+    },
+    {
+      "task_id": "historical-baseline-only-regression-question",
+      "task_class": "historical_regression_question",
+      "specification": "Explain from frozen source why a first committed generation returns baseline_only with unknown risk, and identify the exact live-verification condition that prevents unchanged-contract claims from being inferred without retained history.",
+      "requirement_coverage": "known",
+      "required_evidence": [
+        {
+          "kind": "symbol",
+          "id": "src/temporal.rs::explain_temporal_state_for_captured_generation",
+          "range": {"path": "src/temporal.rs", "start_line": 989, "end_line": 1055},
+          "source_revision_sha256": "80fe9e0fb7e10e77ca0d016b6175182efc91f977497fcda2b68a9fba217960a2"
+        },
+        {
+          "kind": "symbol",
+          "id": "src/temporal.rs::unavailable_report",
+          "range": {"path": "src/temporal.rs", "start_line": 430, "end_line": 456},
+          "source_revision_sha256": "80fe9e0fb7e10e77ca0d016b6175182efc91f977497fcda2b68a9fba217960a2"
+        },
+        {
+          "kind": "range",
+          "id": "corpus-region:src/generation_delta.rs:live-unchanged-contract-check",
+          "range": {"path": "src/generation_delta.rs", "start_line": 677, "end_line": 700},
+          "source_revision_sha256": "bffaa8a9c000de3eba49898965f32374d92fd920279a54dae4d8d02e2a131c14"
+        },
+        {
+          "kind": "test",
+          "id": "tests/temporal_intelligence_v14.rs::temporal_report_is_honest_when_no_active_or_prior_generation_exists",
+          "range": {"path": "tests/temporal_intelligence_v14.rs", "start_line": 283, "end_line": 320},
+          "source_revision_sha256": "6bb604347c508da5dd1fd2fc23dea75c2de55d30fdbf2f232a8b413d44b7982e"
+        }
+      ],
+      "uncertainty_boundaries": [
+        "The answer must distinguish source guarantees from test evidence.",
+        "No claim about commits before the frozen repository commit is accepted without an additional verifiable Git object locator."
+      ],
+      "validation_method": {
+        "kind": "source_grounded_review",
+        "description": "A validator checks every causal statement against the frozen ranges and confirms that the answer labels unavailable history and live source verification separately."
+      },
+      "accepted_outcome_criteria": [
+        "The answer states that missing retained ancestry yields baseline_only rather than invented change history.",
+        "The answer states that unchanged contracts require matching source identity and live source hash in addition to retained comparison evidence.",
+        "Every source claim cites a frozen benchmark locator from this task."
+      ]
+    },
+    {
+      "task_id": "high-fanout-stale-source-propagation-matrix",
+      "task_class": "high_fan_out_change",
+      "specification": "Add a shared stale-source regression matrix across explicit API, attributed CLI and MCP source operations, and V2 compiler sealing; fix inconsistent propagation through the existing verifier while preserving every public field, status vocabulary, schema version, source-authority rule, route, TaskKind, and MCP surface.",
+      "requirement_coverage": "partial",
+      "required_evidence": [
+        {
+          "kind": "range",
+          "id": "corpus-region:src/query.rs:exact-source-verification-and-wrappers",
+          "range": {"path": "src/query.rs", "start_line": 1389, "end_line": 1681},
+          "source_revision_sha256": "eb08b7803e8a049e38b5281ef24ea672877fde9636163b2baa61f749d3be478c"
+        },
+        {
+          "kind": "symbol",
+          "id": "src/cli.rs::build_source_output_with_task_session",
+          "range": {"path": "src/cli.rs", "start_line": 2034, "end_line": 2053},
+          "source_revision_sha256": "77d217edaf39f5800cbfb1569e50dff63d60f5c2982da6ff139270b96dab9532"
+        },
+        {
+          "kind": "range",
+          "id": "corpus-region:bin/atlas-mcp.rs:atlas-source-handler",
+          "range": {"path": "bin/atlas-mcp.rs", "start_line": 589, "end_line": 600},
+          "source_revision_sha256": "258d906cce641e8fdcc8c1692e94452deab54e0b7b48325461f12f5f7d37694e"
+        },
+        {
+          "kind": "symbol",
+          "id": "src/task_compiler.rs::seal_deep_context_ir_v2_with_live_sources",
+          "range": {"path": "src/task_compiler.rs", "start_line": 215, "end_line": 355},
+          "source_revision_sha256": "106ee92c3d132648cf4ea40e029a3e9549d21eefde3f0121c08ff7c8f61a224c"
+        },
+        {
+          "kind": "test",
+          "id": "tests/source_telemetry_surfaces.rs::source_cli_and_mcp_share_optional_task_session_attribution_and_legacy_behavior",
+          "range": {"path": "tests/source_telemetry_surfaces.rs", "start_line": 72, "end_line": 168},
+          "source_revision_sha256": "8980d9fa81eefadb94b16f1c444f7ca05bab80f2fd0f4ccd212bc175cf228bad"
+        },
+        {
+          "kind": "test",
+          "id": "tests/exact_source_compiler.rs::source_drift_seals_blocked_stale_ir_without_durable_telemetry",
+          "range": {"path": "tests/exact_source_compiler.rs", "start_line": 284, "end_line": 323},
+          "source_revision_sha256": "64015ddca70912aa7b769b617f4fb15aa3c125c5b61070b5082ea03fc521e0fa"
+        }
+      ],
+      "uncertainty_boundaries": [
+        "The required locators seed a high-fan-out investigation and do not claim complete call-site coverage.",
+        "Mutate source after reconciliation without activating a replacement generation.",
+        "No TaskKind, Context IR schema, MCP tool, route, public field, or status vocabulary change is authorized."
+      ],
+      "validation_method": {
+        "kind": "cross_surface_regression_matrix",
+        "description": "Extend source telemetry and exact-source compiler coverage with pinned TypeScript valid and stale controls, explicit and serialized outputs, attributed events, and a durable-state snapshot."
+      },
+      "accepted_outcome_criteria": [
+        "API, CLI, and MCP preserve existing hash_mismatch output with the same indexed hash and the same observed hash across all three surfaces, with indexed != observed, and no stale excerpt.",
+        "A stale primary V2 source seals Stale plus Blocked with no materialization.",
+        "Attributed failures preserve existing failure metadata and zero supplied bytes; unattributed access remains unobserved and V2 remains transient.",
+        "Unchanged controls preserve successful source bytes and no public contract changes."
+      ]
+    },
+    {
+      "task_id": "ambiguous-equal-rank-conflicting-provider-evidence",
+      "task_class": "ambiguous_conflicting_evidence",
+      "specification": "For equal-rank provider facts that resolve the same subject to different targets, preserve the conflict and all alternatives while making clear that the stable provider-key/fact-id tie-break is serialization order, not stronger semantic evidence.",
+      "requirement_coverage": "partial",
+      "required_evidence": [
+        {
+          "kind": "symbol",
+          "id": "src/resolution.rs::ClusterOutcome",
+          "range": {"path": "src/resolution.rs", "start_line": 373, "end_line": 405},
+          "source_revision_sha256": "6984ac80e232f5d5cad8d566ffd15552a4d82f6ac1335ffc04e2fb1f7493b9bc"
+        },
+        {
+          "kind": "symbol",
+          "id": "src/resolution.rs::project_cluster",
+          "range": {"path": "src/resolution.rs", "start_line": 407, "end_line": 472},
+          "source_revision_sha256": "6984ac80e232f5d5cad8d566ffd15552a4d82f6ac1335ffc04e2fb1f7493b9bc"
+        },
+        {
+          "kind": "symbol",
+          "id": "src/provider_persistence.rs::record_coverage",
+          "range": {"path": "src/provider_persistence.rs", "start_line": 227, "end_line": 285},
+          "source_revision_sha256": "9aca379d44cd119203bd3a2aae55c7ca5e77380069ac7825ca31abcf84b43416"
+        }
+      ],
+      "uncertainty_boundaries": [
+        "Equal rank does not establish equal provider identity or equivalent provenance.",
+        "The task must not silently discard a target or relabel conflict as corroboration.",
+        "Whether the public type should expose no preferred semantic fact is an implementation decision that requires contract review."
+      ],
+      "validation_method": {
+        "kind": "conflict_policy_review_and_test",
+        "description": "A validator reviews the chosen representation, then permutation tests prove that both targets and provenance survive with honest tie-break labeling."
+      },
+      "accepted_outcome_criteria": [
+        "The result remains an explicit conflict containing every participating fact.",
+        "No equal-rank fact is described as semantically superior solely because its provider key or fact id sorts first.",
+        "The output remains deterministic across input permutations and persistence round trips."
+      ]
+    }
+  ]
+}

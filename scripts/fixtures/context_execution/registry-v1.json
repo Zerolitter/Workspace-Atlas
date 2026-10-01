@@ -1,0 +1,176 @@
+{
+  "frozen_commit": "f5f5c1e500c34fb9eeda6b8aa97ef24bd964246a",
+  "kind": "atlas-context-pilot-registry",
+  "schema_version": "atlas-context-pilot-registry-v1.0.0",
+  "tasks": {
+    "configuration-project-marker-validation": {
+      "acceptance_names": [
+        "rejects_empty_project_marker_entries",
+        "rejects_unix_absolute_project_markers",
+        "rejects_windows_drive_rooted_project_markers",
+        "rejects_windows_unc_project_markers",
+        "rejects_parent_traversal_at_beginning_or_interior",
+        "rejects_backslashes_in_relative_project_markers",
+        "rejects_nul_project_markers_after_public_parse",
+        "rejects_duplicate_project_markers_within_one_provider",
+        "rejects_current_directory_path_components",
+        "rejects_repeated_or_trailing_forward_slashes",
+        "rejects_invalid_markers_in_disabled_provider_entries",
+        "valid_markers_across_enabled_and_disabled_providers_preserve_order",
+        "nonexistent_normalized_project_marker_is_accepted_during_validation",
+        "packaged_example_configuration_parses_with_marker_order_preserved"
+      ],
+      "acceptance_target": "stage2_provider_markers_acceptance",
+      "acquisition_source_sha256": {
+        "config/workspace-atlas-v1.1.config.example.toml": "c022feb766c67a0a661b656ab679afd2bad41deec707a07bacf1edb293f45fb4",
+        "src/config.rs": "d948138f2910569ddd475b1cf98e14c5660e0ed0b469b7869eca17fd096f3a03"
+      },
+      "baseline_failed_names": [
+        "rejects_empty_project_marker_entries",
+        "rejects_unix_absolute_project_markers",
+        "rejects_windows_drive_rooted_project_markers",
+        "rejects_windows_unc_project_markers",
+        "rejects_parent_traversal_at_beginning_or_interior",
+        "rejects_backslashes_in_relative_project_markers",
+        "rejects_nul_project_markers_after_public_parse",
+        "rejects_duplicate_project_markers_within_one_provider",
+        "rejects_current_directory_path_components",
+        "rejects_repeated_or_trailing_forward_slashes",
+        "rejects_invalid_markers_in_disabled_provider_entries"
+      ],
+      "baseline_passed_names": [
+        "valid_markers_across_enabled_and_disabled_providers_preserve_order",
+        "nonexistent_normalized_project_marker_is_accepted_during_validation",
+        "packaged_example_configuration_parses_with_marker_order_preserved"
+      ],
+      "candidate_source": "src/config.rs",
+      "candidate_source_allowlist": [
+        "src/config.rs"
+      ],
+      "candidate_source_sha256": "d948138f2910569ddd475b1cf98e14c5660e0ed0b469b7869eca17fd096f3a03",
+      "corpus_sha256": "10ab436d1e29c8907b44cf2f393086965214285c226150eb6ce9e5968fb7fa60",
+      "probe_fixture": "stage2_provider_markers_acceptance.rs.b64",
+      "probe_injection_path": "tests/stage2_provider_markers_acceptance.rs",
+      "probe_sha256": "212cd7b95847b2bf8aed60d16f6f5b6f56e05c6e3449aa58b304588adff079be",
+      "protected_lockfile_contract": {
+        "path": "Cargo.lock",
+        "canonical_blob_sha256": "c83e54eb1be0feac9e4f819e010a0e2d27f9e084ae59f0015fa11b1000e105f0",
+        "canonical_bytes": 39546,
+        "canonical_line_endings": "lf",
+        "allowed_checkout_representations": [
+          "canonical_lf",
+          "deterministic_crlf"
+        ]
+      },
+      "protected_file_sha256": {
+        "Cargo.toml": "1f0140d1cdcff6e0b532a8ba190c38daa0fb78273f3da9ac88d29e1607e568ee",
+        "config/workspace-atlas-v1.1.config.example.toml": "c022feb766c67a0a661b656ab679afd2bad41deec707a07bacf1edb293f45fb4",
+        "rust-toolchain.toml": "550d7a5d727260f3c5aa9cfa5b42fc6d7265c67bbfced6c5ca8db2ab0e9e5037",
+        "tests/config_privacy.rs": "c54279bf37e27c4f21d146d78d087d43b75ec0b6baae0ccf60923a9d626fec1f"
+      },
+      "regression_names": [
+        "invalid_policy_regex_fails_closed_with_field_and_index",
+        "default_secret_policy_excludes_key_files",
+        "shipped_example_uses_valid_regular_expressions",
+        "reconcile_prunes_excluded_directory_trees"
+      ],
+      "regression_source": "tests/config_privacy.rs",
+      "regression_source_sha256": "c54279bf37e27c4f21d146d78d087d43b75ec0b6baae0ccf60923a9d626fec1f",
+      "regression_target": "config_privacy",
+      "required_outcomes": [
+        "Forbidden marker spellings fail configuration validation.",
+        "Distinct normalized markers preserve declaration order.",
+        "The packaged example configuration continues to parse."
+      ],
+      "specification": "Validate provider project_markers as nonempty normalized relative marker paths: reject absolute paths, parent traversal, backslashes, NUL, and duplicate entries while preserving the packaged example configuration.",
+      "task_class": "configuration",
+      "task_spec_sha256": "1f861d8394760f95404e9662cb780e0c7cf0cd86dd2cb7c163e9951aefdcdb00",
+      "validation_contract_sha256": "993bf52048aeff66cec3da3c1c6f5944bda0f5be47e396abd0599ef31d1b0dd0",
+      "validator_contract_file_sha256": "8a39b9465d87674d02cec34adb2100271034855710a049b7bd86723f10a7424b",
+      "validator_contract_fixture": "markers-validator-contract.json"
+    },
+    "single-file-canonical-id-whitespace": {
+      "acceptance_names": [
+        "entity_rejects_leading_and_trailing_ascii_whitespace_for_every_entity_kind",
+        "entity_rejects_leading_and_trailing_unicode_whitespace_for_every_entity_kind",
+        "entity_rejects_empty_and_whitespace_only_ids_for_every_entity_kind",
+        "entity_preserves_ordinary_unicode_and_interior_whitespace_byte_exactly",
+        "entity_accepts_zero_width_characters_not_removed_by_rust_trim",
+        "entity_rejects_range_kind_even_with_valid_id",
+        "relationship_constructor_forwards_boundary_validation",
+        "relationship_constructor_preserves_valid_ids_byte_exactly",
+        "range_rejects_leading_and_trailing_ascii_whitespace",
+        "range_rejects_leading_and_trailing_unicode_whitespace",
+        "range_rejects_empty_and_whitespace_only_ids",
+        "range_preserves_valid_ids_and_ordered_or_equal_bounds",
+        "reversed_range_reports_invalid_range_before_identity_validation"
+      ],
+      "acceptance_target": "stage2_whitespace_acceptance",
+      "acquisition_source_sha256": {
+        "src/context_metrics.rs": "2f27ff7f5be6cf9c2ea7d29d376f64f95578fd2b75c1c30e2d5af05f5eb8b6b7"
+      },
+      "baseline_failed_names": [
+        "entity_rejects_leading_and_trailing_ascii_whitespace_for_every_entity_kind",
+        "entity_rejects_leading_and_trailing_unicode_whitespace_for_every_entity_kind",
+        "relationship_constructor_forwards_boundary_validation",
+        "range_rejects_leading_and_trailing_ascii_whitespace",
+        "range_rejects_leading_and_trailing_unicode_whitespace"
+      ],
+      "baseline_passed_names": [
+        "entity_accepts_zero_width_characters_not_removed_by_rust_trim",
+        "entity_preserves_ordinary_unicode_and_interior_whitespace_byte_exactly",
+        "entity_rejects_empty_and_whitespace_only_ids_for_every_entity_kind",
+        "entity_rejects_range_kind_even_with_valid_id",
+        "range_preserves_valid_ids_and_ordered_or_equal_bounds",
+        "range_rejects_empty_and_whitespace_only_ids",
+        "relationship_constructor_preserves_valid_ids_byte_exactly",
+        "reversed_range_reports_invalid_range_before_identity_validation"
+      ],
+      "candidate_source": "src/context_metrics.rs",
+      "candidate_source_allowlist": [
+        "src/context_metrics.rs"
+      ],
+      "candidate_source_sha256": "2f27ff7f5be6cf9c2ea7d29d376f64f95578fd2b75c1c30e2d5af05f5eb8b6b7",
+      "corpus_sha256": "10ab436d1e29c8907b44cf2f393086965214285c226150eb6ce9e5968fb7fa60",
+      "probe_fixture": "stage2_whitespace_acceptance.rs.b64",
+      "probe_injection_path": "tests/stage2_whitespace_acceptance.rs",
+      "probe_sha256": "5efd1e64f959da2fb4b3652dd5340685fcdcc5c837458073e49757cb77681cbc",
+      "protected_lockfile_contract": {
+        "path": "Cargo.lock",
+        "canonical_blob_sha256": "c83e54eb1be0feac9e4f819e010a0e2d27f9e084ae59f0015fa11b1000e105f0",
+        "canonical_bytes": 39546,
+        "canonical_line_endings": "lf",
+        "allowed_checkout_representations": [
+          "canonical_lf",
+          "deterministic_crlf"
+        ]
+      },
+      "protected_file_sha256": {
+        "Cargo.toml": "1f0140d1cdcff6e0b532a8ba190c38daa0fb78273f3da9ac88d29e1607e568ee",
+        "config/workspace-atlas-v1.1.config.example.toml": "c022feb766c67a0a661b656ab679afd2bad41deec707a07bacf1edb293f45fb4",
+        "rust-toolchain.toml": "550d7a5d727260f3c5aa9cfa5b42fc6d7265c67bbfced6c5ca8db2ab0e9e5037",
+        "tests/context_metrics.rs": "199a4ba90d4c98accf74f17c982bd1d7c9ff4bbcb9b5cad129f9fb97d952fe1e"
+      },
+      "regression_names": [
+        "derives_exact_canonical_sets_and_transparent_fractions",
+        "observed_reads_never_become_reported_reasoning_claims",
+        "zero_denominators_are_typed_undefined_values",
+        "conflicting_or_unbounded_evidence_fails_with_typed_invalidity",
+        "task_session_transport_preserves_observed_reported_and_changed_classes"
+      ],
+      "regression_source": "tests/context_metrics.rs",
+      "regression_source_sha256": "199a4ba90d4c98accf74f17c982bd1d7c9ff4bbcb9b5cad129f9fb97d952fe1e",
+      "regression_target": "context_metrics",
+      "required_outcomes": [
+        "Leading and trailing whitespace is rejected for entity and range identities.",
+        "Identifiers valid without boundary whitespace and range ordering remain unchanged."
+      ],
+      "specification": "In src/context_metrics.rs, make canonical evidence entity and range identifiers reject leading or trailing whitespace while preserving identifiers that are valid without boundary whitespace and preserving range ordering.",
+      "task_class": "single_file_change",
+      "task_spec_sha256": "b5de488651d0e4162c42745a5abb79789a0d8eb64102ec8c61b02d8b71c8b481",
+      "validation_contract_sha256": "a96199728afb1e4a4b6fa2ae71bbab073da15abfb1bcac82dabb3ab501711def",
+      "validator_contract_file_sha256": "8fb34a5bd489d7e3bbfb74dd244d4daa5b9170d570493de5e90585cd74de38b1",
+      "validator_contract_fixture": "whitespace-validator-contract.json"
+    }
+  }
+}

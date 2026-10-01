@@ -1327,6 +1327,21 @@ fn t25_markdown_links_reject_broken_file_and_fragment_only_anchors() {
 }
 
 #[test]
+fn qualification_documentation_links_are_valid() {
+    let root = root();
+    for relative in [
+        "docs/context-qualification-harness.md",
+        "docs/README.md",
+        "docs/post-v2-strengthening-roadmap.md",
+    ] {
+        let document = std::fs::read_to_string(root.join(relative))
+            .unwrap_or_else(|error| panic!("read qualification documentation {relative}: {error}"));
+        validate_local_markdown_links(&root, relative, &document)
+            .unwrap_or_else(|error| panic!("{error}"));
+    }
+}
+
+#[test]
 fn t25_readiness_guidance_is_complete_linked_and_package_excluded() {
     let root = root();
     let source_context = t25_source_context(&root);
@@ -1381,7 +1396,7 @@ fn t25_readiness_guidance_is_complete_linked_and_package_excluded() {
     assert!(output.status.success(), "{}", output_text(&output));
     let paths = String::from_utf8(output.stdout).expect("Cargo package list must be UTF-8");
     let paths = paths.lines().collect::<Vec<_>>();
-    assert_eq!(paths.len(), 123, "Cargo package membership drifted");
+    assert_eq!(paths.len(), 127, "Cargo package membership drifted");
     assert!(
         paths
             .iter()
@@ -1777,6 +1792,9 @@ fn representative_contract_mutations_fail_closed() {
         "package-archive-pax-sparse",
         "attributes-bare-cr",
         "attributes-mixed-newlines",
+        "encoded-probe-crlf-bytes",
+        "attributes-encoded-probe-altered",
+        "attributes-encoded-probe-broadened",
     ] {
         assert!(
             stdout.contains(&format!("MUTATION {mutation} rejected")),
@@ -1798,13 +1816,14 @@ fn representative_contract_mutations_fail_closed() {
         "package-archive-bounded-members",
         "package-archive-canonical-cargo",
         "attributes-exact-lf",
+        "encoded-probe-exact-lf",
     ] {
         assert!(
             stdout.contains(&format!("CONTROL {control} accepted")),
             "missing control evidence for {control}: {stdout}"
         );
     }
-    assert!(stdout.contains("SELF-TEST passed: 84/84 mutations rejected"));
+    assert!(stdout.contains("SELF-TEST passed: 87/87 mutations rejected"));
 }
 
 #[cfg(windows)]

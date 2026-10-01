@@ -1,0 +1,321 @@
+{
+  "schema_version": "atlas-stage2-provider-markers-validator-contract-v1.0.0",
+  "kind": "atlas-stage2-external-validator-contract",
+  "preparation": {
+    "state": "prepared_unexecuted",
+    "independent_execution": "pending",
+    "execution_owner": "root"
+  },
+  "pilot": {
+    "pilot_id": "stage2-real-model-pilot",
+    "validator_role": "trusted-external-rust-integration-test",
+    "task_id": "configuration-project-marker-validation"
+  },
+  "task": {
+    "task_id": "configuration-project-marker-validation",
+    "task_class": "configuration",
+    "specification": "Validate provider project_markers as nonempty normalized relative marker paths: reject absolute paths, parent traversal, backslashes, NUL, and duplicate entries while preserving the packaged example configuration.",
+    "candidate_source_allowlist_exact": [
+      "src/config.rs"
+    ],
+    "candidate_inline_tests_policy": "Candidate-authored tests are admissible only when contained in the allowlisted src/config.rs bytes and are not acceptance evidence."
+  },
+  "frozen_source": {
+    "repository_commit": "f5f5c1e500c34fb9eeda6b8aa97ef24bd964246a",
+    "repository_object_format": "sha1",
+    "source_content_hash": "sha256",
+    "source_file": "src/config.rs",
+    "source_file_sha256": "d948138f2910569ddd475b1cf98e14c5660e0ed0b469b7869eca17fd096f3a03",
+    "packaged_example_file": "config/workspace-atlas-v1.1.config.example.toml",
+    "packaged_example_sha256": "c022feb766c67a0a661b656ab679afd2bad41deec707a07bacf1edb293f45fb4"
+  },
+  "qualification_binding": {
+    "qualification_schema_version": "atlas-context-qualification-corpus-v1.0.0",
+    "corpus_sha256": "10ab436d1e29c8907b44cf2f393086965214285c226150eb6ce9e5968fb7fa60",
+    "task_spec_sha256": "1f861d8394760f95404e9662cb780e0c7cf0cd86dd2cb7c163e9951aefdcdb00",
+    "validation_contract_sha256": "993bf52048aeff66cec3da3c1c6f5944bda0f5be47e396abd0599ef31d1b0dd0",
+    "hash_derivation": "scripts/qualify-context-evidence.py load_corpus canonical SHA-256"
+  },
+  "trusted_probe": {
+    "source_file": "stage2_provider_markers_acceptance.rs",
+    "checkout_injection_path": "tests/stage2_provider_markers_acceptance.rs",
+    "sha256": "212cd7b95847b2bf8aed60d16f6f5b6f56e05c6e3449aa58b304588adff079be",
+    "test_count": 14,
+    "crate": "workspace_atlas",
+    "public_api": [
+      "workspace_atlas::config::Config::parse",
+      "workspace_atlas::config::Config::validate",
+      "workspace_atlas::config::ProviderConfigEntry::project_markers",
+      "workspace_atlas::error::AtlasError::InvalidConfig"
+    ],
+    "dependencies": [
+      "std",
+      "workspace_atlas"
+    ],
+    "packaged_example_binding": "include_str!(\"../config/workspace-atlas-v1.1.config.example.toml\")"
+  },
+  "baseline_control": {
+    "required_failure_mode": "runtime_assertion_failure",
+    "disallowed_failure_modes": [
+      "compilation_failure",
+      "test_binary_launch_failure",
+      "process_containment_failure"
+    ],
+    "expected_counts": {
+      "total": 14,
+      "passed": 3,
+      "failed": 11,
+      "ignored": 0,
+      "filtered_out": 0
+    },
+    "expected_failed_tests": [
+      "rejects_empty_project_marker_entries",
+      "rejects_unix_absolute_project_markers",
+      "rejects_windows_drive_rooted_project_markers",
+      "rejects_windows_unc_project_markers",
+      "rejects_parent_traversal_at_beginning_or_interior",
+      "rejects_backslashes_in_relative_project_markers",
+      "rejects_nul_project_markers_after_public_parse",
+      "rejects_duplicate_project_markers_within_one_provider",
+      "rejects_current_directory_path_components",
+      "rejects_repeated_or_trailing_forward_slashes",
+      "rejects_invalid_markers_in_disabled_provider_entries"
+    ],
+    "expected_passed_tests": [
+      "valid_markers_across_enabled_and_disabled_providers_preserve_order",
+      "nonexistent_normalized_project_marker_is_accepted_during_validation",
+      "packaged_example_configuration_parses_with_marker_order_preserved"
+    ],
+    "expected_result": "The frozen test binary must launch and run all 14 tests. Exactly the 11 named negative tests fail through runtime assertions because frozen Config validation accepts the forbidden markers; exactly the 3 named positive controls pass; 0 tests are ignored or filtered out; the command exits nonzero."
+  },
+  "candidate_acceptance": {
+    "trusted_probe_expected_counts": {
+      "total": 14,
+      "passed": 14,
+      "failed": 0,
+      "ignored": 0,
+      "filtered_out": 0
+    },
+    "trusted_probe_expectation": "All 14 named trusted tests actually run and pass against a fresh candidate validation checkout containing only audited src/config.rs candidate bytes.",
+    "focused_regression_target": {
+      "target": "config_privacy",
+      "source_file": "tests/config_privacy.rs",
+      "source_file_sha256": "c54279bf37e27c4f21d146d78d087d43b75ec0b6baae0ccf60923a9d626fec1f",
+      "test_count": 4,
+      "expected_test_names": [
+        "invalid_policy_regex_fails_closed_with_field_and_index",
+        "default_secret_policy_excludes_key_files",
+        "shipped_example_uses_valid_regular_expressions",
+        "reconcile_prunes_excluded_directory_trees"
+      ],
+      "expected_counts": {
+        "total": 4,
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0,
+        "filtered_out": 0
+      },
+      "expectation": "All 4 frozen config_privacy integration tests actually run and pass."
+    },
+    "required_gates": [
+      "trusted_probe",
+      "focused_regression_target"
+    ],
+    "acceptance_excludes": [
+      "full-crate Cargo test suite",
+      "project-wide regression acceptance",
+      "all-eleven-task campaign acceptance",
+      "Atlas utility or CLI acceptance",
+      "candidate-authored test results"
+    ]
+  },
+  "named_tests": [
+    {
+      "name": "rejects_empty_project_marker_entries",
+      "category": "negative_empty_entry",
+      "baseline_expectation": "fail_by_runtime_assertion",
+      "candidate_expectation": "typed InvalidConfig",
+      "rationale": "Nonempty constrains each declared marker entry; an absent marker list remains valid."
+    },
+    {
+      "name": "rejects_unix_absolute_project_markers",
+      "category": "negative_unix_absolute",
+      "baseline_expectation": "fail_by_runtime_assertion",
+      "candidate_expectation": "typed InvalidConfig",
+      "rationale": "Leading-slash paths are absolute and cannot be workspace-relative marker identities."
+    },
+    {
+      "name": "rejects_windows_drive_rooted_project_markers",
+      "category": "negative_windows_drive_rooted",
+      "baseline_expectation": "fail_by_runtime_assertion",
+      "candidate_expectation": "typed InvalidConfig",
+      "rationale": "Drive-rooted spellings must fail on every host, including both slash conventions."
+    },
+    {
+      "name": "rejects_windows_unc_project_markers",
+      "category": "negative_windows_unc",
+      "baseline_expectation": "fail_by_runtime_assertion",
+      "candidate_expectation": "typed InvalidConfig",
+      "rationale": "UNC spellings identify rooted network paths and must fail independently of the validation host."
+    },
+    {
+      "name": "rejects_parent_traversal_at_beginning_or_interior",
+      "category": "negative_parent_traversal",
+      "baseline_expectation": "fail_by_runtime_assertion",
+      "candidate_expectation": "typed InvalidConfig",
+      "rationale": "Every '..' component is forbidden, whether it appears first or inside a longer marker."
+    },
+    {
+      "name": "rejects_backslashes_in_relative_project_markers",
+      "category": "negative_backslash",
+      "baseline_expectation": "fail_by_runtime_assertion",
+      "candidate_expectation": "typed InvalidConfig",
+      "rationale": "Canonical relative marker syntax uses forward slashes; backslashes are not normalized."
+    },
+    {
+      "name": "rejects_nul_project_markers_after_public_parse",
+      "category": "negative_nul",
+      "baseline_expectation": "fail_by_runtime_assertion",
+      "candidate_expectation": "typed InvalidConfig",
+      "rationale": "A valid TOML Config is parsed first and then publicly mutated before validate(), proving semantic NUL rejection rather than TOML syntax rejection."
+    },
+    {
+      "name": "rejects_duplicate_project_markers_within_one_provider",
+      "category": "negative_duplicate",
+      "baseline_expectation": "fail_by_runtime_assertion",
+      "candidate_expectation": "typed InvalidConfig",
+      "rationale": "A nonadjacent repeated marker proves list-local duplicate detection without relying on adjacency."
+    },
+    {
+      "name": "rejects_current_directory_path_components",
+      "category": "negative_dot_component",
+      "baseline_expectation": "fail_by_runtime_assertion",
+      "candidate_expectation": "typed InvalidConfig",
+      "rationale": "Normalized markers contain no '.' components, including a marker consisting only of '.'."
+    },
+    {
+      "name": "rejects_repeated_or_trailing_forward_slashes",
+      "category": "negative_empty_path_component",
+      "baseline_expectation": "fail_by_runtime_assertion",
+      "candidate_expectation": "typed InvalidConfig",
+      "rationale": "Repeated and trailing slashes create empty path components and are not normalized spellings."
+    },
+    {
+      "name": "rejects_invalid_markers_in_disabled_provider_entries",
+      "category": "negative_all_provider_entries",
+      "baseline_expectation": "fail_by_runtime_assertion",
+      "candidate_expectation": "typed InvalidConfig",
+      "rationale": "Config semantics apply to every provider entry; disabled state defers execution but does not exempt malformed configuration."
+    },
+    {
+      "name": "valid_markers_across_enabled_and_disabled_providers_preserve_order",
+      "category": "positive_preservation",
+      "baseline_expectation": "pass",
+      "candidate_expectation": "pass",
+      "rationale": "Distinct normalized markers remain byte-exact and ordered across enabled and disabled entries; ordinary Unicode and interior spaces remain data."
+    },
+    {
+      "name": "nonexistent_normalized_project_marker_is_accepted_during_validation",
+      "category": "positive_no_existence_check",
+      "baseline_expectation": "pass",
+      "candidate_expectation": "pass",
+      "rationale": "Marker existence belongs to provider scope discovery and must not be imposed by Config validation."
+    },
+    {
+      "name": "packaged_example_configuration_parses_with_marker_order_preserved",
+      "category": "positive_packaged_example",
+      "baseline_expectation": "pass",
+      "candidate_expectation": "pass",
+      "rationale": "The compile-time included packaged example is the compatibility control and its TypeScript and Rust marker order remains unchanged."
+    }
+  ],
+  "ambiguities_resolved": [
+    {
+      "topic": "empty marker list versus empty marker entry",
+      "decision": "An empty project_markers list remains valid; every entry present in a list must be nonempty.",
+      "basis": "The packaged configuration contains providers with no project_markers, while the task specifies nonempty marker paths."
+    },
+    {
+      "topic": "duplicate scope",
+      "decision": "Duplicates are rejected within each ProviderConfigEntry.project_markers list; no global cross-provider uniqueness contract is introduced.",
+      "basis": "Each provider owns an ordered marker declaration and the task does not define cross-provider identity."
+    },
+    {
+      "topic": "spaces and Unicode",
+      "decision": "Ordinary Unicode and interior ASCII spaces remain byte-preserved data; leading or trailing spaces are not added to this validator contract.",
+      "basis": "The task names path normalization hazards but supplies no public contract requiring trimming."
+    },
+    {
+      "topic": "platform-specific roots",
+      "decision": "Unix absolute, Windows drive-rooted, and Windows UNC spellings are rejected on every validation host.",
+      "basis": "Configuration portability requires host-independent rejection of every explicitly forbidden absolute spelling."
+    },
+    {
+      "topic": "disabled providers",
+      "decision": "Marker validation applies to disabled as well as enabled provider entries.",
+      "basis": "Enabled state controls execution; it does not make malformed persisted configuration valid."
+    },
+    {
+      "topic": "marker existence",
+      "decision": "Config validation accepts normalized nonexistent marker paths.",
+      "basis": "The corpus explicitly assigns existence checks to provider scope discovery."
+    },
+    {
+      "topic": "provider command and shell policy",
+      "decision": "Trusted marker tests use builtin providers and impose no command, version, resolution, or shell-policy behavior.",
+      "basis": "Those behaviors are explicitly outside this task."
+    }
+  ],
+  "root_commands": [
+    {
+      "stage": "baseline_probe_hash",
+      "working_directory": "fresh baseline validation checkout reconstructed from frozen Git after trusted probe injection",
+      "command": "sha256sum tests/stage2_provider_markers_acceptance.rs",
+      "expectation": "Output hash equals 212cd7b95847b2bf8aed60d16f6f5b6f56e05c6e3449aa58b304588adff079be."
+    },
+    {
+      "stage": "baseline_probe",
+      "working_directory": "fresh baseline validation checkout reconstructed from frozen Git after trusted probe injection",
+      "command": "cargo test --locked --test stage2_provider_markers_acceptance -- --nocapture",
+      "expectation": "The test binary launches and runs all 14 tests; exactly the 11 baseline_control.expected_failed_tests fail through runtime assertions; exactly the 3 baseline_control.expected_passed_tests pass; 11 failed, 3 passed, 0 ignored, 0 filtered out; command exits nonzero. Compilation, launch, and process-containment failures do not satisfy this control."
+    },
+    {
+      "stage": "candidate_diff_audit",
+      "working_directory": "fresh candidate validation checkout reconstructed from frozen Git plus allowlisted candidate source bytes",
+      "command": "git diff -- src/config.rs",
+      "expectation": "Root audits the only admitted candidate source diff before executing candidate code."
+    },
+    {
+      "stage": "candidate_probe_hash",
+      "working_directory": "fresh candidate validation checkout after trusted probe injection",
+      "command": "sha256sum tests/stage2_provider_markers_acceptance.rs",
+      "expectation": "Output hash equals 212cd7b95847b2bf8aed60d16f6f5b6f56e05c6e3449aa58b304588adff079be."
+    },
+    {
+      "stage": "candidate_probe",
+      "working_directory": "fresh candidate validation checkout after diff audit and trusted probe injection",
+      "command": "cargo test --locked --test stage2_provider_markers_acceptance -- --nocapture",
+      "expectation": "All 14 trusted tests actually run and pass; 14 passed, 0 failed, 0 ignored, 0 filtered out; command exits zero."
+    },
+    {
+      "stage": "focused_regression_hash",
+      "working_directory": "fresh candidate validation checkout",
+      "command": "sha256sum tests/config_privacy.rs",
+      "expectation": "Output hash equals c54279bf37e27c4f21d146d78d087d43b75ec0b6baae0ccf60923a9d626fec1f."
+    },
+    {
+      "stage": "focused_regression",
+      "working_directory": "fresh candidate validation checkout after trusted probe success",
+      "command": "cargo test --locked --test config_privacy -- --nocapture",
+      "expectation": "All 4 frozen config_privacy tests actually run and pass; 4 passed, 0 failed, 0 ignored, 0 filtered out; command exits zero. This is not a full-crate, project-wide, all-eleven-task, or Atlas utility acceptance gate."
+    }
+  ],
+  "excluded_claims": [
+    "benchmark-model execution",
+    "model identity",
+    "model or agent cost",
+    "validation execution",
+    "candidate acceptance",
+    "qualification for optimization"
+  ]
+}

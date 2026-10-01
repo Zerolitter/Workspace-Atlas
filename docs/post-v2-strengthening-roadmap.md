@@ -117,6 +117,49 @@ Useful Context Throughput
 
 **Exit gate:** Reproducible benchmark evidence supports optimization decisions.
 
+### Implementation status — 2026-10-01
+
+**Implementation — delivered only as draft, unmerged code.**
+[PR #6](https://github.com/Zerolitter/Workspace-Atlas/pull/6) contains the core
+contracts and cancellation-race fix. [PR #7](https://github.com/Zerolitter/Workspace-Atlas/pull/7)
+contains offline reporting plus the two-recipe execution runner.
+[PR #8](https://github.com/Zerolitter/Workspace-Atlas/pull/8) contains the
+separate LIGHT generation-drift fix. None is shipped or merged. Detailed
+receipts, environment, retention, and historical Stage 1 evidence remain in the
+[qualification harness guide](context-qualification-harness.md).
+
+**Verified scope — bounded evidence, not roadmap completion.** Current public
+checks ran 102 Python tests (95 passed, seven existing unavailable-RP7 skips;
+runner 21 included), passed all 12 distribution tests, rejected all 87 negative
+checker mutations, and passed the exact-LF positive control. Formatting,
+hygiene, the 127-path package check, and 186-file physical-byte proof passed in
+the recorded Windows Rust 1.98.1 environment. The first cold distribution run
+passed tests but failed owned-child containment; the guard cleaned that Job and
+an identical retry passed containment. Cold transport remains unqualified.
+
+| Scope | Observed result | Qualification |
+| --- | --- | --- |
+| Whitespace runner recipe | 18 candidate tests passed | Runner-accepted and independently audited |
+| Marker runner recipe | 18 candidate tests passed | Runner-accepted and independently audited |
+| CAP private coverage | 8 candidate tests; 7/7 strict controls valid | Runtime complete; private test-only coverage |
+| HIGH private coverage | 11 candidate tests; 3/4 strict controls valid | Runtime complete; partial qualification |
+
+Both private coverage trials used forced `DIRECT`/`direct_none`, role-isolated
+targets, and made no production-bug or public-recipe claim. CAP source review
+accepted seven criteria, but mutation kills do not prove every criterion or
+later loop case. The HIGH test detected all four mutations, but
+`wrong_observed_hash` correctly remains `INVALID`: an existing old test failed
+contrary to its frozen prediction. The observation was sealed before
+comparison, so HIGH is not 4/4 valid or fully qualified. Shared-helper
+assertions receive no consumer-specific causal credit.
+
+**Roadmap completion — still open.** Passing tests does not close Stage 2.
+There is no full eleven-class controlled campaign, controlled Atlas-utility
+comparison, exact model source-byte accounting, actual reasoning-use or Useful
+Context Throughput, qualified cold transport, or Linux qualification. Legacy
+imports remain attestations, not executed receipts. No Stage 3 optimization or
+JEV work advances. **The Stage 2 scientific exit gate is OPEN.**
+
 ## Stage 3 — Serving Plane performance
 
 Make context cheap enough for the agent loop while preserving correctness.
