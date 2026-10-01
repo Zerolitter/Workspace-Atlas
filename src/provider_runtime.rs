@@ -207,7 +207,8 @@ pub fn spawn_and_wait(plan: &SpawnPlan, cancel: &AtomicBool) -> Result<SpawnOutc
     let mut cancelled = false;
     let mut lifecycle_error = None;
     let exit_code: Option<i32> = loop {
-        match child.try_wait() {
+        let observation = child.try_wait();
+        match classify_process_observation(observation, cancel.load(Ordering::SeqCst)) {
             Ok(Some(status)) => break status.code(),
             Ok(None) => {}
             Err(error) => {
@@ -239,35 +240,63 @@ pub fn spawn_and_wait(plan: &SpawnPlan, cancel: &AtomicBool) -> Result<SpawnOutc
     }
 
     let capture_deadline = Instant::now() + CAPTURE_TIMEOUT;
-    let (stdout, stdout_truncated) = finish_capture(stdout_reader, capture_deadline);
-    let (stderr, stderr_truncated) = finish_capture(stderr_reader, capture_deadline);
+    let stdout = finish_capture(stdout_reader, capture_deadline);
+    let stderr = finish_capture(stderr_reader, capture_deadline);
 
     if let Some(error) = lifecycle_error {
         return Err(AtlasError::Other(error));
     }
+    // Capture may outlive the process. Sample again at the acceptance boundary
+    // so a cancelled invocation cannot yield a successful provider artifact.
+    Ok(finish_spawn_outcome(
+        exit_code,
+        timed_out,
+        cancelled || cancel.load(Ordering::SeqCst),
+        stdout,
+        stderr,
+    ))
+}
+
+fn finish_spawn_outcome(
+    exit_code: Option<i32>,
+    timed_out: bool,
+    cancelled: bool,
+    stdout: (Vec<u8>, bool),
+    stderr: (Vec<u8>, bool),
+) -> SpawnOutcome {
+    let (stdout, stdout_truncated) = stdout;
+    let (stderr, stderr_truncated) = stderr;
     if cancelled {
-        return Ok(SpawnOutcome::Cancelled {
+        return SpawnOutcome::Cancelled {
             stdout,
             stderr,
             stdout_truncated,
             stderr_truncated,
-        });
+        };
     }
     if timed_out {
-        return Ok(SpawnOutcome::TimedOut {
+        return SpawnOutcome::TimedOut {
             stdout,
             stderr,
             stdout_truncated,
             stderr_truncated,
-        });
+        };
     }
-    Ok(SpawnOutcome::Exited {
+    SpawnOutcome::Exited {
         exit_code,
         stdout,
         stderr,
         stdout_truncated,
         stderr_truncated,
-    })
+    }
+}
+
+/// Apply the provider lifecycle precedence at one process observation.
+fn classify_process_observation(
+    observation: io::Result<Option<std::process::ExitStatus>>,
+    cancelled: bool,
+) -> io::Result<Option<std::process::ExitStatus>> {
+    observation.map(|status| if cancelled { None } else { status })
 }
 
 /// Read from `handle` up to `cap` bytes into the returned buffer, continuing
@@ -1388,6 +1417,55 @@ mod tests {
             validate_output_artifact(dir.path(), Path::new("out.json"), 1_000_000).unwrap();
         assert_eq!(artifact.bytes, std::fs::metadata(&output).unwrap().len());
         assert_eq!(artifact.sha256.len(), 64);
+    }
+
+    #[test]
+    fn cancellation_wins_when_successful_exit_is_already_observed() {
+        #[cfg(unix)]
+        use std::os::unix::process::ExitStatusExt;
+        #[cfg(windows)]
+        use std::os::windows::process::ExitStatusExt;
+
+        let success = std::process::ExitStatus::from_raw(0);
+        assert!(success.success());
+        assert!(classify_process_observation(Ok(Some(success)), true)
+            .unwrap()
+            .is_none());
+        assert_eq!(
+            classify_process_observation(Ok(Some(success)), false)
+                .unwrap()
+                .unwrap()
+                .code(),
+            Some(0)
+        );
+        assert!(classify_process_observation(Err(io::Error::other("poll failed")), true).is_err());
+    }
+
+    #[test]
+    fn cancellation_at_capture_completion_preserves_diagnostics_without_success() {
+        for timed_out in [false, true] {
+            let outcome = finish_spawn_outcome(
+                Some(0),
+                timed_out,
+                true,
+                (b"completed output".to_vec(), true),
+                (b"diagnostic".to_vec(), false),
+            );
+            match outcome {
+                SpawnOutcome::Cancelled {
+                    stdout,
+                    stderr,
+                    stdout_truncated,
+                    stderr_truncated,
+                } => {
+                    assert_eq!(stdout, b"completed output");
+                    assert_eq!(stderr, b"diagnostic");
+                    assert!(stdout_truncated);
+                    assert!(!stderr_truncated);
+                }
+                other => panic!("cancellation must win at acceptance, got {other:?}"),
+            }
+        }
     }
 
     #[test]

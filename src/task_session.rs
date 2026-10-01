@@ -3153,6 +3153,83 @@ mod tests {
     }
 
     #[test]
+    fn every_legacy_transition_matches_the_contract() {
+        use TaskSessionState::*;
+
+        let (_dir, conn, ws, generation) = setup();
+        let session = create_task_session(
+            &conn,
+            &ws,
+            &generation,
+            &h(0),
+            &h(1),
+            RawTaskRetention::None,
+            None,
+            TaskKind::Explore,
+            "1.0.0",
+        )
+        .unwrap();
+        let states = [
+            Created,
+            ContextCompiled,
+            Active,
+            Reconciled,
+            Completed,
+            Abandoned,
+            Failed,
+        ];
+        let legal = [
+            (Created, ContextCompiled),
+            (Created, Failed),
+            (ContextCompiled, Active),
+            (ContextCompiled, Failed),
+            (Active, Reconciled),
+            (Active, Abandoned),
+            (Active, Failed),
+            (Reconciled, Completed),
+            (Reconciled, Abandoned),
+            (Reconciled, Failed),
+        ];
+        for from in states {
+            for to in states {
+                // Model a persisted session restored at every legal state.
+                conn.execute(
+                    "UPDATE task_session SET state = ?2 WHERE task_session_id = ?1",
+                    params![session.task_session_id, state_str(from)],
+                )
+                .unwrap();
+                let snapshot = || {
+                    conn.query_row(
+                        "SELECT * FROM task_session WHERE task_session_id = ?1",
+                        [&session.task_session_id],
+                        |row| {
+                            (0..row.as_ref().column_count())
+                                .map(|column| row.get::<_, rusqlite::types::Value>(column))
+                                .collect::<rusqlite::Result<Vec<_>>>()
+                        },
+                    )
+                    .unwrap()
+                };
+                let before = snapshot();
+                let result = transition_task_session(&conn, &session.task_session_id, to);
+                assert_eq!(
+                    result.is_ok(),
+                    legal.contains(&(from, to)),
+                    "{from:?} -> {to:?}"
+                );
+                let after = load_task_session(&conn, &session.task_session_id)
+                    .unwrap()
+                    .unwrap();
+                if result.is_ok() {
+                    assert_eq!(after.state, to);
+                } else {
+                    assert_eq!(snapshot(), before, "rejected transition mutated session");
+                }
+            }
+        }
+    }
+
+    #[test]
     fn context_use_events_are_recorded_ordered_and_source_distinguished() {
         let (_d, conn, ws, gen_id) = setup();
         let session = create_task_session(
