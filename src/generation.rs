@@ -415,4 +415,121 @@ mod tests {
         let loaded = load_generation(&conn, &gen.generation_id).unwrap().unwrap();
         assert_eq!(loaded.state, GenerationState::Abandoned);
     }
+
+    #[test]
+    fn every_generation_transition_matches_the_contract() {
+        use GenerationState::*;
+
+        for from in [Candidate, Committed, Failed, Abandoned] {
+            for to in [Committed, Failed, Abandoned] {
+                let (_dir, conn, ws_id) = fixture();
+                let baseline =
+                    begin_candidate(&conn, &ws_id, TriggerKind::Baseline, "p1", "1.0.0").unwrap();
+                activate_candidate(&conn, &ws_id, &baseline.generation_id, None).unwrap();
+                let subject =
+                    begin_candidate(&conn, &ws_id, TriggerKind::Reconcile, "p1", "1.0.0").unwrap();
+                match from {
+                    Candidate => {}
+                    Committed => {
+                        activate_candidate(&conn, &ws_id, &subject.generation_id, None).unwrap()
+                    }
+                    Failed => {
+                        fail_candidate(&conn, &subject.generation_id, "prior", "failed").unwrap()
+                    }
+                    Abandoned => abandon_candidate(&conn, &subject.generation_id).unwrap(),
+                }
+                let snapshot = || {
+                    conn.query_row(
+                        "SELECT * FROM index_generation WHERE generation_id = ?1",
+                        [&subject.generation_id],
+                        |row| {
+                            (0..row.as_ref().column_count())
+                                .map(|column| row.get::<_, rusqlite::types::Value>(column))
+                                .collect::<rusqlite::Result<Vec<_>>>()
+                        },
+                    )
+                    .unwrap()
+                };
+                let before = snapshot();
+                let active_before: String = conn
+                    .query_row(
+                        "SELECT active_generation_id FROM workspace WHERE workspace_id = ?1",
+                        [&ws_id],
+                        |row| row.get(0),
+                    )
+                    .unwrap();
+                let result = match to {
+                    Committed => {
+                        activate_candidate(&conn, &ws_id, &subject.generation_id, Some("new-tree"))
+                    }
+                    Failed => fail_candidate(&conn, &subject.generation_id, "new", "failure"),
+                    Abandoned => abandon_candidate(&conn, &subject.generation_id),
+                    Candidate => unreachable!(),
+                };
+                assert_eq!(result.is_ok(), from == Candidate, "{from:?} -> {to:?}");
+                let after = load_generation(&conn, &subject.generation_id)
+                    .unwrap()
+                    .unwrap();
+                let active_after: String = conn
+                    .query_row(
+                        "SELECT active_generation_id FROM workspace WHERE workspace_id = ?1",
+                        [&ws_id],
+                        |row| row.get(0),
+                    )
+                    .unwrap();
+                if result.is_ok() {
+                    assert_eq!(after.state, to);
+                    assert_eq!(
+                        active_after,
+                        if to == Committed {
+                            subject.generation_id
+                        } else {
+                            active_before
+                        }
+                    );
+                } else {
+                    assert_eq!(snapshot(), before, "rejected transition mutated generation");
+                    assert_eq!(active_after, active_before);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn reader_snapshot_remains_committed_across_activation() {
+        let (dir, writer, ws_id) = fixture();
+        let baseline =
+            begin_candidate(&writer, &ws_id, TriggerKind::Baseline, "p1", "1.0.0").unwrap();
+        activate_candidate(&writer, &ws_id, &baseline.generation_id, None).unwrap();
+        let candidate =
+            begin_candidate(&writer, &ws_id, TriggerKind::Reconcile, "p1", "1.0.0").unwrap();
+        let config =
+            Config::parse("schema_version = \"1.0.0\"\n[workspace]\ndisplay_name = \"reader\"\n")
+                .unwrap();
+        let reader =
+            crate::catalogue::open_connection(&dir.path().join("atlas.sqlite"), &config).unwrap();
+        let snapshot = |connection: &Connection| -> (String, String) {
+            connection
+                .query_row(
+                    "SELECT w.active_generation_id, g.state
+                     FROM workspace w JOIN index_generation g
+                       ON g.generation_id = w.active_generation_id
+                     WHERE w.workspace_id = ?1",
+                    [&ws_id],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .unwrap()
+        };
+        let read_transaction = reader.unchecked_transaction().unwrap();
+        let old = (baseline.generation_id, "committed".to_string());
+        assert_eq!(snapshot(&read_transaction), old);
+
+        activate_candidate(&writer, &ws_id, &candidate.generation_id, None).unwrap();
+        let new = (candidate.generation_id, "committed".to_string());
+        assert_eq!(snapshot(&writer), new);
+        assert_eq!(snapshot(&read_transaction), old);
+
+        read_transaction.commit().unwrap();
+        assert_eq!(snapshot(&reader), new);
+    }
 }

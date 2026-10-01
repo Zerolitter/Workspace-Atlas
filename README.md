@@ -368,6 +368,13 @@ installed external V1 user base.
 
 ### Compatibility
 
+The [post-v2 strengthening roadmap](docs/post-v2-strengthening-roadmap.md)
+sequences contract hardening, qualification, Serving performance, deterministic
+context precision, and portable consumer contracts. The
+[core operation contracts](docs/core-contracts.md) define legal state
+transitions and failure guarantees. Optional intelligence remains isolated
+until it demonstrates value against the upgraded deterministic baseline.
+
 - Explicit operations and Governor-routed operations coexist. Explicit
   operations keep their documented behavior and are not silently redirected.
 - All 19 advertised MCP tools are supported public interfaces in v2.0.0; this

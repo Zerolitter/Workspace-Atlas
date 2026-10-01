@@ -4,8 +4,15 @@ This changelog records crate releases and capability compatibility separately.
 
 ## [Unreleased]
 
+### Added
+
+- Define the core operation guarantees and legal generation/task transitions,
+  with state-machine and reader-snapshot qualification for the post-v2 roadmap.
+
 ### Fixed
 
+- Preserve provider cancellation when cancellation and successful process exit
+  contend, including cancellation observed during bounded output capture.
 - Windows provider discovery now accepts Cargo/rustup executable proxies only
   after validating the `rustup.exe` target, preserves proxy invocation
   semantics, and fingerprints the effective toolchain component. This lets an
