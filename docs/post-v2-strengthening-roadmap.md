@@ -126,13 +126,36 @@ with build, formatting, Clippy, public-hygiene, and package checks. Three
 existing helper probes remain ignored. Windows is verified; Linux runtime
 behavior remains unqualified.
 
-The Stage 2 [qualification harness foundation](context-qualification-harness.md)
-now provides the frozen eleven-class corpus, strict normalized observation and
-reported-receipt contracts, typed metrics, deterministic report reconstruction,
-comparison gates, and synthetic offline fixtures. These are infrastructure
-checks only. No model-task campaign or independently executed validator has
-qualified accepted outcomes or actual Useful Context Throughput, so the Stage 2
-scientific exit gate remains open.
+The Stage 2 implementation is under review in draft
+[PR #7](https://github.com/Zerolitter/Workspace-Atlas/pull/7). Its
+[qualification harness foundation](context-qualification-harness.md) provides
+the frozen eleven-class corpus, strict attested observation/report contracts,
+typed metrics, deterministic comparison gates, and a source-only native Context
+IR `1.0.0` acquisition adapter. Native acquisition smoke evidence is
+acquisition-only and includes no model result or acceptance.
+
+Two independently validated real-model pilots now cover exactly two frozen
+corpus tasks. Both used caller-forced Governor `DIRECT` with zero Atlas context;
+their candidate patches are benchmark artifacts, not shipped Rust changes.
+
+| Task | Candidate scope | Frozen baseline | Reconstructed candidate validation |
+| --- | --- | --- | --- |
+| `single-file-canonical-id-whitespace` | only `src/context_metrics.rs` | 8 passing tests, 5 runtime-failing tests | 13 acceptance tests and 5 focused regression tests passed |
+| `configuration-project-marker-validation` | only `src/config.rs` | 3 positive tests passed, 11 semantic tests failed at runtime | all 14 acceptance tests and 4 `config_privacy` regression tests passed; zero ignored or filtered |
+
+Root independently audited and reconstructed both candidates under the frozen
+probe contract and unchanged process guard. Warm retries succeeded. Failed cold
+attempts remain retained, and cold-build transport is unqualified because owned
+Visual Studio `vctip.exe` descendants outlived those attempts. Across bounded
+post-adapter checks, 94 Python tests and 12 `distribution_readiness` tests
+passed; all five native-adapter review findings are closed.
+
+Two of eleven frozen tasks are accepted for focused scope; nine are unexecuted.
+Exact source-byte cost, actual reasoning use, Atlas benefit, Useful Context
+Throughput, the controlled context comparison, and the full campaign remain
+unknown or outstanding. Legacy attested reports retain
+`validation_execution_verified=false`. **The Stage 2 scientific exit gate is
+OPEN.**
 
 ## Stage 3 — Serving Plane performance
 
