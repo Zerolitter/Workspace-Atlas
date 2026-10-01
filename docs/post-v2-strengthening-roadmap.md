@@ -119,106 +119,46 @@ Useful Context Throughput
 
 ### Implementation status — 2026-10-01
 
-PRs [#6](https://github.com/Zerolitter/Workspace-Atlas/pull/6),
-[#7](https://github.com/Zerolitter/Workspace-Atlas/pull/7), and
-[#8](https://github.com/Zerolitter/Workspace-Atlas/pull/8) are draft and
-unmerged. PR #8 is the already-pushed verified production fix from its source
-owner; it is not shipped or merged.
+**Implementation — delivered only as draft, unmerged code.**
+[PR #6](https://github.com/Zerolitter/Workspace-Atlas/pull/6) contains the core
+contracts and cancellation-race fix. [PR #7](https://github.com/Zerolitter/Workspace-Atlas/pull/7)
+contains offline reporting plus the two-recipe execution runner.
+[PR #8](https://github.com/Zerolitter/Workspace-Atlas/pull/8) contains the
+separate LIGHT generation-drift fix. None is shipped or merged. Detailed
+receipts, environment, retention, and historical Stage 1 evidence remain in the
+[qualification harness guide](context-qualification-harness.md).
 
-Historical Stage 1 draft PR #6 contains the core guarantees/legal transitions
-and the provider cancellation-race fix with its regressions. Earlier scoped
-Windows qualification reported 700 unique Rust tests, 19 Python hygiene tests,
-build/format/Clippy/hygiene/package checks, and three existing ignored helper
-probes; those are not a new current total or a shipped/merged claim, and Linux
-runtime qualification remains open.
+**Verified scope — bounded evidence, not roadmap completion.** Current public
+checks ran 102 Python tests (95 passed, seven existing unavailable-RP7 skips;
+runner 21 included), passed all 12 distribution tests, rejected all 87 negative
+checker mutations, and passed the exact-LF positive control. Formatting,
+hygiene, the 127-path package check, and 186-file physical-byte proof passed in
+the recorded Windows Rust 1.98.1 environment. The first cold distribution run
+passed tests but failed owned-child containment; the guard cleaned that Job and
+an identical retry passed containment. Cold transport remains unqualified.
 
-The reporting/normalization harness remains offline. The separate source-only
-runner executes exactly two closed recipes; only its `verify` phase is offline
-integrity reconstruction.
+| Scope | Observed result | Qualification |
+| --- | --- | --- |
+| Whitespace runner recipe | 18 candidate tests passed | Runner-accepted and independently audited |
+| Marker runner recipe | 18 candidate tests passed | Runner-accepted and independently audited |
+| CAP private coverage | 8 candidate tests; 7/7 strict controls valid | Runtime complete; private test-only coverage |
+| HIGH private coverage | 11 candidate tests; 3/4 strict controls valid | Runtime complete; partial qualification |
 
-Runner `113fc1a1…` with registry `2a406f15…` completed both recipes through
-`baseline → model → validate → verify` on exclusive source-role targets and a
-settled Rust 1.98.1 Cargo/rustc/Rustup/component-metadata profile. All four outer
-phases exited zero under containment for each recipe.
+Both private coverage trials used forced `DIRECT`/`direct_none`, role-isolated
+targets, and made no production-bug or public-recipe claim. CAP source review
+accepted seven criteria, but mutation kills do not prove every criterion or
+later loop case. The HIGH test detected all four mutations, but
+`wrong_observed_hash` correctly remains `INVALID`: an existing old test failed
+contrary to its frozen prediction. The observation was sealed before
+comparison, so HIGH is not 4/4 valid or fully qualified. Shared-helper
+assertions receive no consumer-specific causal credit.
 
-| Closed recipe | Baseline control | Candidate validation | Executed receipt |
-| --- | --- | --- | --- |
-| `single-file-canonical-id-whitespace` | 8 pass, 5 semantic runtime failures | 13 acceptance and 5 focused regressions passed; zero ignored/filtered | `7c83ea72a19cd8e33ce551c427ea38f4cc2b36d8e1a6a80d1e2a15dc397831ed` |
-| `configuration-project-marker-validation` | 3 pass, 11 semantic runtime failures | 14 acceptance and 4 `config_privacy` regressions passed; zero ignored/filtered | `c61b350b5c66b9e4a5db49c00597f44faa4fa751411f939d5d6d22e43135f056` |
-
-The whitespace independent audit matched all 48 receipt and 18 manifest
-dependencies, checked all 169 tracked files with only one allowlisted source
-file changed, matched all four physical lockfile bindings, and confirmed its
-retained identical retry path. Its trace has four completed responses and six
-tool requests.
-
-The marker independent audit is also complete: all 48 receipt and 18 manifest
-dependencies match; baseline is 3 pass/11 semantic runtime failures; all 14
-acceptance and 4 regression tests pass; all three cleanup-only first failures
-are retained with identical second attempts selected; and all four lockfile
-bindings plus both exclusive role targets match. Its trace has nine completed
-responses and 12 successful tools using the default
-`openai-codex/gpt-5.6-sol`, with no private validator reads. Offline verification
-checked retained integrity and did not execute validation again.
-
-Both acquisitions were forced `DIRECT`/`direct_none` with all five integer
-Atlas counters observed at zero. They make no automatic-routing, sufficiency,
-Atlas-benefit, or usefulness claim. The complete evidence set retains 144
-declared files plus a retention manifest under
-`.local-atlas-runs/stage2-executed-runner-pilots-20261001`. The text archive
-preserves streams, JSONL, manifests, source helpers, and original
-path/configuration/executable identity records, not every executable binary.
-Original live identities remain separately fenced and scoped to the recorded
-environment; retention neither rebinds evidence nor mints receipts.
-
-Rejected private-instruction and canonical-LF/physical-CRLF preflights remain
-failed evidence. The separate old-compiler 1.94.1→1.98.1 attempt retained all
-streams but produced no observation or model result. No frozen source, Git
-line-ending setting, or system resource was changed.
-
-Earlier private task-class captures, including the retained refactor 30-check
-and equal-rank 21-check exclusive rechecks, preserve scoped outcomes but are not
-new runner recipes or optimization evidence. Source attribution for older
-shared-target Rust captures remains limited.
-
-Private capacity followups separately have 11 positive CAP and 12 positive HIGH
-baseline checks. Their first test-only candidates were rejected before runtime
-for missing explicit public success assertions before `unwrap`; same-session
-blind repairs are retained. Both repairs now pass their semantic source gates:
-all 7 CAP criteria and all 10 HIGH criteria. Across all 169 protected files,
-bytes are unchanged except the exact append-only CAP tests; HIGH adds only its
-permitted new file. Candidate Cargo and mutation acceptance remain pending.
-This work is not a production bug fix or completed task class.
-
-Root's clean v3 snapshot at commit
-`5b7e301a28e84668dbdf2f2b55ce073deda12dab` and tree
-`3fa66abbd2c698849aaeec82ccb11e3f8b2b07b9` matched all 186 tracked
-physical source hashes. Windows selected Cargo/rustc 1.98.1 identity and
-environment pre/post fences passed; default MSVC/shared-DLL identity remains
-excluded. Formatting passed. Six Python modules ran 102 tests: 95 passed and
-seven legacy-init-fence skips reported the unavailable preserved RP7
-executable. Hygiene passed 186 tracked and 127 packaged paths; the frozen
-runner suite remains 21 passing tests.
-
-All 12 distribution tests passed their exact complete partition. The first cold
-attempt returned zero with all 12 passing but failed owned-descendant
-containment; the unchanged guard cleaned that owned Job. An identical
-same-source, same-argv retry passed all 12 and containment. Both attempts remain
-retained, and cold transport is not qualified.
-
-The checker rejected all 87 negative mutations, including CRLF encoded-probe
-bytes and altered/broadened rule mutations, without a waiver. The exact LF
-positive control passed. The narrow
-`scripts/fixtures/context_execution/*.rs.b64` rule and source-authority checks
-require exact LF physical bytes.
-
-Both runner receipts establish their two task outcomes, not the full
-eleven-class controlled campaign. Exact source-byte cost, unmeasured
-CPU/I/O/database work, actual reasoning use, Atlas benefit, Useful Context
-Throughput, cold transport, and Linux qualification remain unknown or open.
-Legacy attested reports retain `validation_execution_verified=false`. No Stage
-3 optimization or JEV work advances. **The Stage 2 scientific exit gate is
-OPEN.**
+**Roadmap completion — still open.** Passing tests does not close Stage 2.
+There is no full eleven-class controlled campaign, controlled Atlas-utility
+comparison, exact model source-byte accounting, actual reasoning-use or Useful
+Context Throughput, qualified cold transport, or Linux qualification. Legacy
+imports remain attestations, not executed receipts. No Stage 3 optimization or
+JEV work advances. **The Stage 2 scientific exit gate is OPEN.**
 
 ## Stage 3 — Serving Plane performance
 

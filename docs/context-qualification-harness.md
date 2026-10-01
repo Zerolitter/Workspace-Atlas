@@ -428,6 +428,11 @@ dimension. A comparable result remains
 
 **Implementation status — 2026-10-01.**
 
+Read the status in three layers: implementation is delivered only in draft,
+scoped validation records what actually passed, and roadmap completion remains
+blocked by the open scientific gate. Passing tests does not make Stage 2
+complete.
+
 - **Native acquisition smoke remains acquisition-only.** The retained
   `.local-atlas-runs/stage2-native-20261001` captures include no model result,
   task acceptance, reasoning-use observation, or utility result.
@@ -483,15 +488,60 @@ dimension. A comparable result remains
   runner recipes or optimization evidence. Source attribution for older
   shared-target Rust captures remains limited.
 
-  Private capacity followups separately have 11 positive CAP and 12 positive
-  HIGH baseline checks. Their first test-only candidates were rejected before
-  runtime because they lacked explicit public success assertions before
-  `unwrap`; same-session blind repairs are retained. Both repaired candidates
-  now pass their semantic source gates: all 7 CAP criteria and all 10 HIGH
-  criteria. Across all 169 protected files, bytes are unchanged except the exact
-  append-only CAP tests; HIGH adds only its permitted new file. Candidate Cargo
-  and mutation acceptance remain pending. These are not production bug fixes or
-  completed task classes.
+  The CAP and stale-source HIGH trials were both forced
+  `DIRECT`/`direct_none`, protected 169 source paths, used role-isolated
+  targets, and recorded a Windows Rust 1.98.1 environment. In the baseline,
+  model, and valid-candidate checkouts, protected source bytes were unchanged
+  except the exact append-only CAP test changes and one permitted new HIGH test
+  file. Isolated negative-control checkouts contain only their frozen, declared
+  production-source overlays plus the reviewed candidate tests. Those overlays
+  are test inputs, not production fixes or changes left in the public diff.
+  Cold transport remains unqualified. These are private test-only coverage
+  observations, not public runner recipes or completed task classes.
+
+  CAP has 11 positive baseline checks. Its repaired candidate passes 8 tests:
+  5 preserved and 3 new. All seven frozen negative controls are valid: each
+  reaches a reviewed semantic assertion failure in the new tests and satisfies
+  the strict controller gates. Source review accepted all seven criteria, but
+  mutation kills do not establish every criterion or later loop case, so this
+  is not a full causal-coverage claim.
+  The first source-invalid candidate, same-session
+  blind repair, and cleanup attempts remain preserved. `candidate_runtime_valid`
+  is true; the older candidate/result `task_acceptance` fields remain null, and
+  no executed public-runner receipt was minted. Production behavior was already
+  correct at baseline and remains unchanged.
+  CAP is qualified only as a private test-only coverage trial.
+
+  HIGH has 12 positive baseline checks. Its repaired candidate passes 11 tests:
+  one new matrix test, one preserved telemetry test, and nine preserved compiler
+  tests. The new test detects all four frozen mutations at reviewed semantic
+  assertions. Three controls are strict-valid; `wrong_observed_hash` remains
+  `INVALID` because its pre-model prediction expected no old failures, while the
+  existing `source_drift_seals_blocked_stale_ir_without_durable_telemetry` test
+  also fails with a V2 source-reference/live-proof contradiction. The
+  observation was sealed before prediction comparison. The original invalid
+  record remains preserved without retrocertification. The trial is therefore
+  neither 4/4 valid nor fully qualified. Shared-helper assertions receive no
+  consumer-specific causal credit, and no production bug or fix is claimed.
+  Runtime validation is complete; HIGH qualification remains partial because
+  the frozen old-test prediction failed.
+
+  Independent review of the base archive is complete: 759 source/text files are
+  declared and 761 files are present including `retention-manifest.json` and
+  `root-assessment.json`, with exact byte, original, and inventory matches. The
+  review covered all 107 frozen inputs for each pilot, 338 baseline physical
+  source copies, 24 actual role overlays, and 6 original compiler-drift files.
+  It found eight supporting original-path copy gaps.
+
+  Root left the base archive unchanged and added a nine-file supplement (eight
+  dependencies plus its coordinator), a new manifest, and a separate
+  original-to-archive map under the explicitly ignored
+  `.local-atlas-runs/stage2-test-only-final-supplement-20261001`. Root byte
+  verification and the independent supplement inventory/hash review both
+  passed: all recorded sizes, hashes, original bytes, and original-path
+  resolutions match, with no missing or extra files.
+  The archives exclude build targets and binaries and neither rebind original
+  identity records nor overwrite prior freezes or results.
 - **Clean public checks completed.** Root's clean v3 snapshot at commit
   `5b7e301a28e84668dbdf2f2b55ce073deda12dab` and tree
   `3fa66abbd2c698849aaeec82ccb11e3f8b2b07b9` matched all 186 tracked
