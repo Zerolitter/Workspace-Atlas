@@ -32,7 +32,7 @@ MAX_ARCHIVE_BYTES = 64 * 1_048_576
 MAX_ARCHIVE_EXPANDED_BYTES = 64 * 1_048_576
 EXPECTED_WORKFLOW_SHA256 = "b5060db2858c8b31c2a9fa8f62b27ec1d2ece88732d3bc0be1451904644353d8"
 EXPECTED_QUALITY_WORKFLOW_SHA256 = "ef82bce0fb53632aaf7851ffa5cd4640422a6aeb632984e0c1f89e01f30f7fac"
-EXPECTED_GITATTRIBUTES = b"* text=auto\n\n*.rs text eol=lf\n*.toml text eol=lf\n*.md text eol=lf\n*.sql text eol=lf\n*.json text eol=lf\n*.jsonl text eol=lf\n*.yml text eol=lf\n*.yaml text eol=lf\n*.py text eol=lf\n*.ts text eol=lf\n*.tsx text eol=lf\n*.js text eol=lf\n*.jsx text eol=lf\nLICENSE text eol=lf\n\n*.png binary\n*.jpg binary\n*.jpeg binary\n*.gif binary\n*.webp binary\n*.sqlite binary\n*.scip binary\n*.zip binary\n*.7z binary\n"
+EXPECTED_GITATTRIBUTES = b"* text=auto\n\n*.rs text eol=lf\n*.toml text eol=lf\n*.md text eol=lf\n*.sql text eol=lf\n*.json text eol=lf\n*.jsonl text eol=lf\n*.yml text eol=lf\n*.yaml text eol=lf\n*.py text eol=lf\n*.ts text eol=lf\n*.tsx text eol=lf\n*.js text eol=lf\n*.jsx text eol=lf\nscripts/fixtures/context_execution/*.rs.b64 text eol=lf\nLICENSE text eol=lf\n\n*.png binary\n*.jpg binary\n*.jpeg binary\n*.gif binary\n*.webp binary\n*.sqlite binary\n*.scip binary\n*.zip binary\n*.7z binary\n"
 TIMEOUT_SECONDS = 180
 BASELINE_PACKAGE_PATHS = (
     '.cargo_vcs_info.json',
@@ -170,6 +170,10 @@ CARGO_GENERATED_PACKAGE_PATHS = frozenset({".cargo_vcs_info.json", "Cargo.toml.o
 PINNED_TEXT_AUTO_LF_PATHS = frozenset({
     "Cargo.lock", "LICENSE-APACHE", "LICENSE-MIT", "schemas/scip/scip.proto",
 })
+ENCODED_PROBE_PATHS = (
+    "scripts/fixtures/context_execution/stage2_whitespace_acceptance.rs.b64",
+    "scripts/fixtures/context_execution/stage2_provider_markers_acceptance.rs.b64",
+)
 EXPECTED_BINS = {
     "atlas": "bin/atlas.rs",
     "atlas-bench": "bin/atlas-bench.rs",
@@ -216,6 +220,7 @@ SOURCE_PATHS = (
     "tests/contract_examples/provider-process-request.example.json",
     "tests/benchmark_manifest.rs",
     "tests/context_yield_experiments.rs",
+    *ENCODED_PROBE_PATHS,
 )
 
 
@@ -1046,32 +1051,74 @@ def parse_indexed_attributes(content: bytes) -> list[tuple[str, tuple[str, ...]]
     return rules
 
 
-def indexed_attribute_policies(root: pathlib.Path, paths) -> dict[str, tuple[str, ...]]:
-    _, attribute_oids = stage_zero_entries(root, [".gitattributes"], "DR-INPUT")
-    content = indexed_blob_bytes(root, attribute_oids[".gitattributes"], "DR-INPUT")
-    require(content == EXPECTED_GITATTRIBUTES, "DR-INPUT",
-            "indexed .gitattributes drifted from the exact authorized LF-only contract")
-    rules = parse_indexed_attributes(content)
-    policies: dict[str, tuple[str, ...]] = {}
-    for relative in paths:
-        matches = [attributes for pattern, attributes in rules
-                   if fnmatch.fnmatchcase(relative, pattern)]
-        require(bool(matches), "DR-INPUT", f"indexed attributes do not cover source: {relative}")
-        selected = matches[-1]
-        if relative in PINNED_TEXT_AUTO_LF_PATHS:
-            require(selected == ("text=auto",), "DR-INPUT", f"pinned text policy drifted: {relative}")
-            selected = ("text=auto", "pinned-eol=lf")
-        policies[relative] = selected
-    return policies
+def authorized_attribute_rules(
+    content: bytes,
+) -> list[tuple[str, tuple[str, ...]]]:
+    require(
+        content == EXPECTED_GITATTRIBUTES,
+        "DR-INPUT",
+        "indexed .gitattributes drifted from the exact authorized LF-only contract",
+    )
+    return parse_indexed_attributes(content)
+
+
+def selected_attribute_policy(
+    rules: list[tuple[str, tuple[str, ...]]],
+    relative: str,
+) -> tuple[str, ...]:
+    matches = [
+        attributes
+        for pattern, attributes in rules
+        if fnmatch.fnmatchcase(relative, pattern)
+    ]
+    require(
+        bool(matches),
+        "DR-INPUT",
+        f"indexed attributes do not cover source: {relative}",
+    )
+    selected = matches[-1]
+    if relative in PINNED_TEXT_AUTO_LF_PATHS:
+        require(
+            selected == ("text=auto",),
+            "DR-INPUT",
+            f"pinned text policy drifted: {relative}",
+        )
+        return ("text=auto", "pinned-eol=lf")
+    return selected
+
+
+def indexed_attribute_policies(
+    root: pathlib.Path, paths
+) -> dict[str, tuple[str, ...]]:
+    _, attribute_oids = stage_zero_entries(
+        root, [".gitattributes"], "DR-INPUT"
+    )
+    content = indexed_blob_bytes(
+        root, attribute_oids[".gitattributes"], "DR-INPUT"
+    )
+    rules = authorized_attribute_rules(content)
+    return {
+        relative: selected_attribute_policy(rules, relative)
+        for relative in paths
+    }
 
 
 def package_bytes_equivalent(
     relative: str, indexed: bytes, observed: bytes,
     policies: dict[str, tuple[str, ...]],
 ) -> bool:
+    if relative in ENCODED_PROBE_PATHS:
+        return (
+            observed == indexed
+            and b"\r" not in indexed
+            and b"\r" not in observed
+        )
     if observed == indexed:
         return True
-    if policies.get(relative) not in {("text", "eol=lf"), ("text=auto", "pinned-eol=lf")}:
+    if policies.get(relative) not in {
+        ("text", "eol=lf"),
+        ("text=auto", "pinned-eol=lf"),
+    }:
         return False
     try:
         indexed.decode("utf-8")
@@ -2304,10 +2351,92 @@ def run_self_test(sources: Sources) -> list[str]:
             output.append(f"MUTATION {name} rejected [DR-INPUT]")
         else:
             raise GateFailure("DR-NO-PUBLISH", f"mutation {name} was accepted")
-    parse_indexed_attributes(EXPECTED_GITATTRIBUTES)
+    rules = authorized_attribute_rules(EXPECTED_GITATTRIBUTES)
     output.append("CONTROL attributes-exact-lf accepted")
+    probe_rule = (
+        b"scripts/fixtures/context_execution/*.rs.b64 text eol=lf\n"
+    )
+    require(
+        EXPECTED_GITATTRIBUTES.count(probe_rule) == 1,
+        "DR-NO-PUBLISH",
+        "encoded-probe LF rule is absent or duplicated",
+    )
+    probe_path = ENCODED_PROBE_PATHS[0]
+    probe_policy = selected_attribute_policy(rules, probe_path)
+    require(
+        probe_policy == ("text", "eol=lf"),
+        "DR-NO-PUBLISH",
+        "encoded-probe LF rule does not select exact text/eol policy",
+    )
+    probe_bytes = b"YWJjZA==\n"
+    require(
+        package_bytes_equivalent(
+            probe_path,
+            probe_bytes,
+            probe_bytes,
+            {probe_path: probe_policy},
+        ),
+        "DR-NO-PUBLISH",
+        "encoded-probe exact LF bytes were rejected",
+    )
+    output.append("CONTROL encoded-probe-exact-lf accepted")
+    try:
+        require(
+            package_bytes_equivalent(
+                probe_path,
+                probe_bytes,
+                probe_bytes.replace(b"\n", b"\r\n"),
+                {probe_path: probe_policy},
+            ),
+            "DR-INPUT",
+            "encoded-probe checkout bytes are not exact LF",
+        )
+    except GateFailure as error:
+        require(
+            error.check_id == "DR-INPUT",
+            "DR-NO-PUBLISH",
+            "encoded-probe CRLF mutation rejected under wrong check",
+        )
+        output.append(
+            "MUTATION encoded-probe-crlf-bytes rejected [DR-INPUT]"
+        )
+    else:
+        raise GateFailure(
+            "DR-NO-PUBLISH",
+            "mutation encoded-probe-crlf-bytes was accepted",
+        )
 
-    total = len(mutations) + 36
+    for name, payload in (
+        (
+            "attributes-encoded-probe-altered",
+            EXPECTED_GITATTRIBUTES.replace(
+                probe_rule,
+                b"scripts/fixtures/context_execution/*.rs.b64 text=auto\n",
+            ),
+        ),
+        (
+            "attributes-encoded-probe-broadened",
+            EXPECTED_GITATTRIBUTES.replace(
+                probe_rule,
+                b"scripts/fixtures/context_execution/* text eol=lf\n",
+            ),
+        ),
+    ):
+        try:
+            authorized_attribute_rules(payload)
+        except GateFailure as error:
+            require(
+                error.check_id == "DR-INPUT",
+                "DR-NO-PUBLISH",
+                f"mutation {name} rejected under wrong check",
+            )
+            output.append(f"MUTATION {name} rejected [DR-INPUT]")
+        else:
+            raise GateFailure(
+                "DR-NO-PUBLISH", f"mutation {name} was accepted"
+            )
+
+    total = len(mutations) + 39
     rejected = sum(line.startswith("MUTATION ") for line in output)
     output.append(f"SELF-TEST passed: {rejected}/{total} mutations rejected")
     return output

@@ -13,6 +13,7 @@
 *.tsx text eol=lf
 *.js text eol=lf
 *.jsx text eol=lf
+scripts/fixtures/context_execution/*.rs.b64 text eol=lf
 LICENSE text eol=lf
 
 *.png binary

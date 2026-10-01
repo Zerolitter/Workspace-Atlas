@@ -1,11 +1,15 @@
 # Context qualification harness foundation
 
-The Stage 2 qualification harness is an offline, dependency-free measurement
-foundation. It validates normalized observations, derives typed metrics, emits
-content-addressed reports, and rejects incomparable report pairs. It does not
-run agents, Atlas routes, validators, tests, or shell commands. The packaged
-JSON files are synthetic contract fixtures, not measured Atlas or model-task
-qualification.
+The Stage 2 qualification work has two distinct layers. The reporting and
+normalization layer is offline and dependency-free: it validates retained
+observations, derives typed metrics, emits content-addressed reports, and
+rejects incomparable pairs without running agents, Atlas routes, validators,
+tests, or shell commands. Separately,
+`scripts/run-context-qualification-pilot.py` executes baseline, model, and
+candidate validation for exactly two closed tasks; its `verify` phase is
+offline integrity reconstruction, not another execution. Packaged JSON inputs
+remain synthetic contract fixtures unless explicitly identified as retained
+runtime evidence.
 
 The harness schemas are unpublished harness contracts. They do not modify the
 public Context IR `1.0.0` or `2.0.0`, Context Yield, Truth Plane, Serving Plane,
@@ -27,6 +31,11 @@ CLI, or MCP contracts.
   Context IR `1.0.0` acquisitions into a closed acquisition-only normalization;
   `scripts/test_normalize_native_context_evidence.py` qualifies that private
   adapter contract.
+- `scripts/run-context-qualification-pilot.py` implements the fixed two-task
+  phased execution/verification contract; its trusted registry, encoded probes,
+  and validator contracts live under `scripts/fixtures/context_execution/`,
+  with focused qualification in
+  `scripts/test_run_context_qualification_pilot.py`.
 
 The scripts are repository-source tools and are intentionally outside the Cargo
 package. This guide and the JSON fixtures are packaged.
@@ -37,6 +46,7 @@ Run the focused suite from a repository checkout:
 
 ```powershell
 python -B -m unittest scripts.test_qualify_context_evidence
+python -B -m unittest scripts.test_run_context_qualification_pilot
 ```
 
 Generate two reports and compare them offline. Output files must not already
@@ -160,6 +170,145 @@ mapping/delivery/timing/acceptance claims fail closed. Synthetic test captures
 exercise blocked empty and partial 40-record inputs but are not measured Atlas
 qualification evidence.
 
+## Executed two-task pilot runner
+
+`scripts/run-context-qualification-pilot.py` is a source-only execution runner
+for exactly `single-file-canonical-id-whitespace` and
+`configuration-project-marker-validation`. Its registry, trusted Rust probes,
+test names, source allowlists, Cargo targets, task prompts, and acceptance
+partitions are fixed under `scripts/fixtures/context_execution/`. Any other task
+or input field fails before a subprocess or workspace mutation.
+
+The CLI has four phases:
+
+```text
+run-context-qualification-pilot.py baseline <all frozen paths and executable identities>
+run-context-qualification-pilot.py model --manifest <frozen-run-manifest>
+run-context-qualification-pilot.py validate --manifest <frozen-run-manifest>
+run-context-qualification-pilot.py verify --manifest <frozen-run-manifest> --receipt <executed-receipt>
+```
+
+The baseline phase is the only phase accepting operator bindings. It freezes
+the task, corpus specification and criteria, base commit, registry, probe,
+validator contract, model prompt, runner, unchanged process guard, Git/Cargo/
+Atlas/OMP executables, retained model/agent configuration documents, explicit
+OMP instruction file, acquisition checkout/catalogue, three pre-created
+checkouts, scratch/target/evidence roots, and the exact inherited qualified
+toolchain environment. Following Cargo's documented
+[hierarchical lookup](https://doc.rust-lang.org/cargo/reference/config.html#hierarchical-structure),
+the runner enumerates both `.cargo/config` names at the baseline and validation
+Cargo working directories and every ancestor, plus both Cargo-home names and
+Rustup `settings.toml`. Present and absent paths are frozen; additions,
+removals, content changes, environment drift, links/reparse points, and
+overlapping Cargo roots fail closed before execution. A discovered top-level
+Cargo `include` fails with an explicit unsupported-input error rather than
+silently omitting its recursive inputs. Only path, presence, size, and digest
+observations are retained, never external configuration contents. Offline
+verification reconstructs those sealed observations but does not claim to
+re-prove live absence. The target container must be fresh and empty at freeze.
+The runner reserves fixed `baseline` and `validation` children, binds each Cargo
+argv to its checkout role, and permits reuse only for retries or subsequent
+checks against that same frozen source tree. Cross-role, foreign, container-root,
+and pre-populated targets fail closed. This private contract has no reused-cache
+mode and makes no cold-latency claim. Exact weights revision remains nullable.
+Model/agent configuration is declared metadata, not proof that OMP applied it.
+Explicitly operator-bound instruction and configuration files are private run
+evidence, not public package content. They retain exact bounded UTF-8 bytes,
+may contain legitimate local absolute paths, and still reject NUL, credentials,
+links/reparse points, identity drift, and unknown configuration fields. Public
+source and fixture hygiene remains unchanged.
+
+The execution contract is:
+
+1. **Freeze before model dispatch.** Every executable, fixture, prompt,
+   configuration, instruction, runner, guard, corpus/task/criteria, and input
+   path is content-addressed in one closed manifest. Later phases accept only
+   that manifest and recheck every identity; they cannot replace arguments.
+2. **Separate mutation and validation roots.** Baseline, model, and candidate
+   validation checkouts must be distinct pristine, detached checkouts of
+   `f5f5c1e500c34fb9eeda6b8aa97ef24bd964246a` inside the declared scratch root.
+   Every Git fence uses `--no-optional-locks`; branch/tag-relative replay and
+   automatic optional-lock refresh are excluded. Checkouts cannot overlap each
+   other or evidence, target, trusted-fixture, acquisition, executable, or
+   catalogue roots. Links/reparse ancestors, wrong history, staged or
+   unexpected files, and ignored build-affecting inputs such as `.cargo/config*`
+   fail closed. Tests never run in the model checkout.
+   Validation reconstructs only the captured allowlisted source bytes in the
+   fresh candidate checkout and injects the runner-owned trusted probe.
+   Cargo outputs are also isolated by source tree: baseline commands use only
+   the derived baseline target, while candidate acceptance and regression use
+   only the derived validation target. Manifest and receipt reconstruction
+   derive these paths from the frozen target container rather than trusting a
+   captured argv.
+   `Cargo.lock` has a separate byte contract: the frozen commit's canonical LF
+   blob remains the canonical authority, while a checkout may contain only
+   those exact LF bytes or their exact deterministic LF-to-CRLF expansion.
+   Freeze records each checkout role, absolute lockfile path, representation,
+   byte count, and physical SHA-256; later phases and receipt verification
+   compare those physical bytes exactly. No other protected file, model source,
+   evidence source, probe, transform, or Git filter receives this exception.
+3. **Fixed native acquisition.** The runner captures the fixed capabilities,
+   status, Governor, status sequence for the exact frozen task and source
+   targets. It requires supported V2 envelopes, completed `DIRECT` execution,
+   `direct_none`, null LIGHT/DEEP payloads, zero Atlas counters, stable committed
+   generation/workspace/configuration, and unchanged frozen source and Git
+   identities before and after. Literal outputs remain caller-forced DIRECT
+   baseline evidence—not automatic sufficiency, Atlas benefit, or a recomputed
+   decision-hash claim.
+4. **Exact negative controls.** Baseline authority is the registry's complete
+   named pass/fail partition, Cargo exit 101, runtime assertion evidence,
+   successful test-binary launch, successful containment, and pristine
+   before/allowlisted-after Git and source fences. Compilation, launch, timeout,
+   malformed output, containment failure, duplicates, ignored, filtered,
+   missing, or zero tests cannot satisfy the control.
+5. **Candidate acceptance.** Acceptance requires successful contained model
+   execution, exact allowlisted mutation scope, retained audited source bytes,
+   reconstruction into the fresh validation checkout, exact trusted acceptance
+   and focused regression results, and unchanged final source/probe/protected
+   fences. Model final claims and candidate-authored tests have no acceptance
+   authority. Functional failures produce rejected outcomes; transport/model
+   failures remain unsuccessful execution and cannot become accepted.
+6. **Capture before interpretation.** Every attempt first retains fixed argv,
+   resolved executable argv, cwd, exit code, bounded decoded stdout/stderr,
+   hashes, duration, containment, cleanup status, and failure. Streams are UTF-8
+   transport text decoded with replacement and re-encoded for retention; they
+   are not original raw bytes. Arbitrarily large integer process return codes,
+   including Windows values above 255, are preserved. Return-code interpretation
+   happens only after capture, preserving Cargo 101 compile failures and every
+   unsuccessful attempt.
+7. **Finite retry.** Each Cargo target permits at most one identical retry, only
+   after the exact expected named runtime result plus an owned-child containment
+   error whose guard cleanup completed. Every fence is rechecked first. No
+   assertion, compile, timeout, model, or changed-input retry is allowed. Every
+   failed attempt remains a receipt dependency. There is no child whitelist,
+   guard relaxation, global process killing, or OS workaround.
+8. **Actual OMP observations.** The runner retains full JSONL/session evidence.
+   It selects completed persistent `type=message` assistant rows only, excludes
+   user/tool/aborted/incomplete rows, and reconciles response identity, provider,
+   model, completion, usage, and tool-call identities exactly against stdout
+   `message_end` rows. Stream updates are never counted as responses and model
+   acceptance claims carry no authority. Provider/model labels and
+   per-response usage remain raw.
+   A usage field is aggregated only when known for every applicable response;
+   otherwise the aggregate is null with a separately labelled observed partial
+   sum. Cache counters remain separate. Tool requests are requests;
+   tool-formatted output bytes are not raw source bytes or reasoning use. Exact
+   source bytes, CPU/I/O/database steps, Atlas advantage, and usefulness remain
+   unavailable unless actually measured.
+9. **Executed receipt.** Only a successful real execution path can emit the
+   closed `atlas-context-pilot-executed-receipt-v1.0.0` schema. It binds native
+   acquisition, baseline, candidate, outcome, all attempts/logs/configuration,
+   validator identities, exact named results, and final fences. Read-only
+   `verify` reparses the closed manifest/receipt and verifies every dependency;
+   it establishes artifact integrity, not newly executed validation. Importing
+   an older private artifact cannot mint an executed receipt. The legacy
+   `qualify-context-evidence.py` attestation contract stays closed and keeps
+   `validation_execution_verified=false`.
+
+   Focused unit tests exercise the same pure reconstruction pipeline with an
+   explicitly synthetic manifest/receipt flag that is unavailable from the CLI;
+   synthetic artifacts cannot mint a real executed receipt.
+
 ## Frozen corpus and locator semantics
 
 The corpus covers all eleven roadmap classes: single-file, cross-module, API,
@@ -277,44 +426,111 @@ dimension. A comparable result remains
 
 ## Current evidence and next campaign gate
 
-Current evidence has three separate scopes:
+**Implementation status — 2026-10-01.**
 
-- **Native acquisition smoke only.** Retained captures at the portable, ignored
-  path `.local-atlas-runs/stage2-native-20261001` bind the committed Atlas
-  generation `gen_9e8ee67bea359639f2561523ba0d5168`. The Rust
-  `provider_runtime` path produced text fallback, partial coverage, zero
-  semantic symbols, blocked Context IR, an empty packet, and CLI exit zero. The
-  configuration path produced partial coverage and a bounded 40-record packet.
-  No model ran in this smoke capture; no acceptance, reasoning use, or utility
-  was observed. CPU, disk, database-step, and model-token counters were not
-  measured.
-- **Two independently validated DIRECT pilots.** Both real OMP model runs used
-  caller-forced native Governor `DIRECT` with a zero Atlas packet. Candidate
-  patches are benchmark artifacts; neither Rust change is shipped by this
-  harness work.
+- **Native acquisition smoke remains acquisition-only.** The retained
+  `.local-atlas-runs/stage2-native-20261001` captures include no model result,
+  task acceptance, reasoning-use observation, or utility result.
+- **Both reusable-runner recipes executed, were runner-accepted, and verified.**
+  Runner `113fc1a1…` with registry `2a406f15…` completed
+  `baseline → model → validate → verify` on fresh role-isolated targets with
+  the settled Rust 1.98.1 Cargo/rustc/Rustup/component-metadata profile. All
+  four outer phases exited zero under containment for each recipe. `verify`
+  established retained integrity only; it did not execute validation again.
 
-  | Frozen corpus task | Candidate patch scope | Frozen pre-dispatch probe | Independently reconstructed candidate validation | Retained ledger |
-  | --- | --- | --- | --- | --- |
-  | `single-file-canonical-id-whitespace` | only `src/context_metrics.rs` | 8 passing tests, 5 runtime-failing tests | 13 acceptance tests and 5 focused `context_metrics` regression tests passed | `.local-atlas-runs/stage2-whitespace-pilot-20261001/independent-model-pilot-ledger.json` |
-  | `configuration-project-marker-validation` | only `src/config.rs` | 3 positive tests passed, 11 semantic tests failed at runtime | all 14 acceptance tests and 4 `config_privacy` regression tests passed; exact names, zero ignored or filtered | `.local-atlas-runs/stage2-markers-pilot-20261001/independent-model-pilot-ledger.json` |
+  | Closed recipe | Exact baseline control | Candidate validation | Executed receipt |
+  | --- | --- | --- | --- |
+  | `single-file-canonical-id-whitespace` | 8 pass, 5 semantic runtime failures | 13 acceptance and 5 `context_metrics` regression tests passed; zero ignored/filtered | `7c83ea72a19cd8e33ce551c427ea38f4cc2b36d8e1a6a80d1e2a15dc397831ed` |
+  | `configuration-project-marker-validation` | 3 pass, 11 semantic runtime failures | 14 acceptance and 4 `config_privacy` regression tests passed; zero ignored/filtered | `c61b350b5c66b9e4a5db49c00597f44faa4fa751411f939d5d6d22e43135f056` |
 
-  Trusted probe names and contracts were frozen before dispatch. Root audited
-  each candidate patch, reconstructed allowlisted source into a frozen
-  validation checkout, and verified containment under an unchanged process
-  guard. Successful warm retries passed that guard. Failed cold attempts remain
-  retained; owned Visual Studio `vctip.exe` descendants outlived those attempts,
-  and the guard cleaned only its own job. Cold-build transport remains
-  unqualified; no guard waiver or OS, hardware, or performance setting changed.
+  The whitespace independent audit matched all 48 receipt dependencies and 18
+  manifest dependencies, checked all 169 tracked files with only one allowlisted
+  source file changed, matched all four physical lockfile bindings, and
+  confirmed the retained identical retry path after owned-child cleanup
+  failures. Its actual OMP trace contains four completed responses and six tool
+  requests using the default `openai-codex/gpt-5.6-sol`: 24,009 input, 807
+  output, 56,832 cache-read, zero cache-write, 81,648 total, and 435
+  `reasoningTokens`. That provider counter is not a claim about actual
+  reasoning use.
 
-  Actual OMP model traces and token observations are retained. Exact source-byte
-  cost, actual reasoning use, Atlas benefit, and Useful Context Throughput
-  remain null or unknown. These focused acceptances do not alter legacy
-  attested reports, whose `validation_execution_verified=false` semantics
-  remain unchanged.
-- **Campaign still required.** Two of eleven frozen corpus tasks are accepted
-  for focused scope; nine have not executed. Controlled context comparisons and
-  actual Useful Context Throughput evidence have not run. Two zero-context
-  DIRECT trials cannot qualify all task classes or establish an Atlas advantage.
+  The marker independent audit is also complete. All 48 receipt and 18 manifest
+  dependencies match; the baseline has 3 passes and 11 semantic runtime
+  failures; and all 14 acceptance plus 4 regression tests pass. All three
+  cleanup-only first failures are retained with identical second attempts
+  selected. All four physical lockfile bindings and both exclusive role targets
+  match. Its actual trace has nine completed responses and 12 successful tools
+  using the default `openai-codex/gpt-5.6-sol`, with no private validator reads.
+
+  Both acquisitions were caller-forced `DIRECT`/`direct_none` with all five
+  integer Atlas counters observed at zero. This does not establish automatic
+  routing, sufficiency, Atlas benefit, or usefulness. The complete run retained
+  144 declared files plus a retention manifest under
+  `.local-atlas-runs/stage2-executed-runner-pilots-20261001`. The text evidence
+  archive preserves streams, JSONL, manifests, source helpers, and original
+  path/configuration/executable identity records; it does not copy every
+  executable binary. Original live identities remain separately fenced and
+  scoped to the recorded environment. Retention does not rebind evidence or
+  mint receipts.
+
+  The rejected private-instruction and canonical-LF/physical-CRLF preflights
+  remain failed evidence and were never accepted. A separate old-compiler
+  1.94.1→1.98.1 build attempt retained all streams but produced no observation
+  or model result. No frozen source, Git line-ending setting, or system resource
+  was changed.
+- **Other private evidence remains scoped.** Seven earlier private task-class
+  captures, plus the retained refactor (`30` checks) and equal-rank (`21`
+  checks) exclusive rechecks, preserve their recorded outcomes but are not new
+  runner recipes or optimization evidence. Source attribution for older
+  shared-target Rust captures remains limited.
+
+  Private capacity followups separately have 11 positive CAP and 12 positive
+  HIGH baseline checks. Their first test-only candidates were rejected before
+  runtime because they lacked explicit public success assertions before
+  `unwrap`; same-session blind repairs are retained. Both repaired candidates
+  now pass their semantic source gates: all 7 CAP criteria and all 10 HIGH
+  criteria. Across all 169 protected files, bytes are unchanged except the exact
+  append-only CAP tests; HIGH adds only its permitted new file. Candidate Cargo
+  and mutation acceptance remain pending. These are not production bug fixes or
+  completed task classes.
+- **Clean public checks completed.** Root's clean v3 snapshot at commit
+  `5b7e301a28e84668dbdf2f2b55ce073deda12dab` and tree
+  `3fa66abbd2c698849aaeec82ccb11e3f8b2b07b9` matched all 186 tracked
+  physical source hashes. Windows selected Cargo/rustc 1.98.1 identity and
+  environment pre/post fences passed; default MSVC/shared-DLL identity remains
+  excluded. Formatting passed. Six Python modules ran 102 tests: 95 passed and
+  seven `scripts.test_legacy_init_fence` skips reported the unavailable
+  preserved RP7 executable. Public hygiene passed for 186 tracked and 127
+  packaged paths. The frozen runner suite remains 21 passing tests.
+
+  All 12 distribution tests passed their exact complete partition. The first
+  cold attempt returned zero with all 12 passing, but owned-descendant
+  containment failed; the unchanged guard cleaned only that owned Job. An
+  identical same-source, same-argv retry passed all 12 and containment. Both
+  attempts remain retained; cold transport is not qualified.
+
+  The checker rejected all 87 negative mutations, including CRLF encoded-probe
+  bytes and altered/broadened rule mutations, without a waiver. The exact LF
+  positive control passed. The repository rule pins
+  `scripts/fixtures/context_execution/*.rs.b64` to LF, and source-authority
+  checks require exact physical bytes.
+- **Product work remains separate.** PRs
+  [#6](https://github.com/Zerolitter/Workspace-Atlas/pull/6),
+  [#7](https://github.com/Zerolitter/Workspace-Atlas/pull/7), and
+  [#8](https://github.com/Zerolitter/Workspace-Atlas/pull/8) are draft and
+  unmerged. PR #8 is the already-pushed verified production fix from its source
+  owner; no shipping or merge claim is made here.
+  Historical Stage 1 draft PR #6 contains the core guarantees/legal
+  transitions and the provider cancellation-race fix with its regressions.
+  Earlier scoped Windows qualification reported 700 unique Rust tests, 19
+  Python hygiene tests, build/format/Clippy/hygiene/package checks, and three
+  existing ignored helper probes; those are not a new current total or a
+  shipped/merged claim, and Linux runtime qualification remains open.
+- **Campaign still required.** Both runner receipts establish their two closed
+  task outcomes, not the full eleven-class controlled campaign. Exact source-byte
+  cost, unmeasured CPU/I/O/database work, actual reasoning use, Atlas benefit,
+  Useful Context Throughput, cold transport, and Linux qualification remain
+  unknown or open. No Stage 3 optimization or JEV work advances from these
+  results.
 
 Native source-content and source-tree hashes are SHA-256 under
 `src/hashing.rs`; Blake3 applies only to specific opaque native identifiers.

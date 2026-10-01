@@ -1,0 +1,232 @@
+{
+  "schema_version": "atlas-stage2-external-validator-contract-v1.0.0",
+  "kind": "atlas-stage2-external-validator-contract",
+  "revision": {
+    "predecessor_contract_sha256": "6712966178c1e247e56698389125977b239681072d9f0359ccf7f6251c2d8d2f",
+    "reason": "Pre-model correction: replace the unsupported full-suite regression gate with task-scoped trusted acceptance and focused context_metrics regression gates."
+  },
+  "pilot": {
+    "pilot_id": "stage2-real-model-pilot",
+    "validator_role": "trusted-external-rust-integration-test",
+    "task_id": "single-file-canonical-id-whitespace"
+  },
+  "task": {
+    "task_id": "single-file-canonical-id-whitespace",
+    "task_class": "single_file_change",
+    "specification": "In src/context_metrics.rs, make canonical evidence entity and range identifiers reject leading or trailing whitespace while preserving identifiers that are valid without boundary whitespace and preserving range ordering.",
+    "candidate_source_allowlist": [
+      "src/context_metrics.rs"
+    ]
+  },
+  "frozen_source": {
+    "repository_commit": "f5f5c1e500c34fb9eeda6b8aa97ef24bd964246a",
+    "repository_object_format": "sha1",
+    "source_content_hash": "sha256",
+    "source_file": "src/context_metrics.rs"
+  },
+  "qualification_binding": {
+    "qualification_schema_version": "atlas-context-qualification-corpus-v1.0.0",
+    "corpus_sha256": "10ab436d1e29c8907b44cf2f393086965214285c226150eb6ce9e5968fb7fa60",
+    "task_spec_sha256": "b5de488651d0e4162c42745a5abb79789a0d8eb64102ec8c61b02d8b71c8b481",
+    "validation_contract_sha256": "a96199728afb1e4a4b6fa2ae71bbab073da15abfb1bcac82dabb3ab501711def",
+    "hash_derivation": "scripts/qualify-context-evidence.py load_corpus canonical SHA-256 at the frozen checkout"
+  },
+  "probe": {
+    "source_file": "stage2_whitespace_acceptance.rs",
+    "checkout_injection_path": "tests/stage2_whitespace_acceptance.rs",
+    "sha256": "5efd1e64f959da2fb4b3652dd5340685fcdcc5c837458073e49757cb77681cbc",
+    "test_count": 13,
+    "crate": "workspace_atlas",
+    "api_module": "workspace_atlas::context_metrics",
+    "dependencies": [
+      "std",
+      "workspace_atlas"
+    ]
+  },
+  "supported_kinds": {
+    "all_public_kinds": [
+      "File",
+      "Symbol",
+      "Config",
+      "Test",
+      "Query",
+      "Document",
+      "External",
+      "Relationship",
+      "Range"
+    ],
+    "entity_constructor_non_range_kinds": [
+      "File",
+      "Symbol",
+      "Config",
+      "Test",
+      "Query",
+      "Document",
+      "External",
+      "Relationship"
+    ],
+    "range_constructor_kind": "Range",
+    "forwarded_constructor": "CanonicalEvidenceId::relationship"
+  },
+  "named_tests": [
+    {
+      "name": "entity_rejects_leading_and_trailing_ascii_whitespace_for_every_entity_kind",
+      "expectation": "For every public non-Range kind, leading or trailing ASCII space, tab, and newline returns Err(ContextMetricInvalidity::InvalidIdentity)."
+    },
+    {
+      "name": "entity_rejects_leading_and_trailing_unicode_whitespace_for_every_entity_kind",
+      "expectation": "For every public non-Range kind, leading or trailing NBSP, EM SPACE, NARROW NBSP, and IDEOGRAPHIC SPACE returns Err(ContextMetricInvalidity::InvalidIdentity)."
+    },
+    {
+      "name": "entity_rejects_empty_and_whitespace_only_ids_for_every_entity_kind",
+      "expectation": "For every public non-Range kind, empty and ASCII or Unicode whitespace-only IDs return Err(ContextMetricInvalidity::InvalidIdentity)."
+    },
+    {
+      "name": "entity_preserves_ordinary_unicode_and_interior_whitespace_byte_exactly",
+      "expectation": "Ordinary, Unicode, and interior-whitespace entity IDs remain accepted and id() returns the original bytes without normalization."
+    },
+    {
+      "name": "entity_accepts_zero_width_characters_not_removed_by_rust_trim",
+      "expectation": "Zero-width code points outside Rust trim whitespace remain valid both alone and at ID boundaries, with byte-exact preservation."
+    },
+    {
+      "name": "entity_rejects_range_kind_even_with_valid_id",
+      "expectation": "CanonicalEvidenceId::entity rejects CanonicalEvidenceKind::Range with Err(ContextMetricInvalidity::InvalidIdentity) even for an otherwise valid ID."
+    },
+    {
+      "name": "relationship_constructor_forwards_boundary_validation",
+      "expectation": "The public relationship helper returns typed InvalidIdentity for empty, whitespace-only, and leading or trailing ASCII and Unicode whitespace IDs."
+    },
+    {
+      "name": "relationship_constructor_preserves_valid_ids_byte_exactly",
+      "expectation": "The public relationship helper preserves ordinary, Unicode, interior-whitespace, and non-trimmed zero-width IDs byte-exactly."
+    },
+    {
+      "name": "range_rejects_leading_and_trailing_ascii_whitespace",
+      "expectation": "Ordered ranges with leading or trailing ASCII space, tab, or newline IDs return Err(ContextMetricInvalidity::InvalidIdentity)."
+    },
+    {
+      "name": "range_rejects_leading_and_trailing_unicode_whitespace",
+      "expectation": "Ordered ranges with leading or trailing NBSP, EM SPACE, NARROW NBSP, or IDEOGRAPHIC SPACE IDs return Err(ContextMetricInvalidity::InvalidIdentity)."
+    },
+    {
+      "name": "range_rejects_empty_and_whitespace_only_ids",
+      "expectation": "Ordered ranges with empty and ASCII or Unicode whitespace-only IDs return Err(ContextMetricInvalidity::InvalidIdentity)."
+    },
+    {
+      "name": "range_preserves_valid_ids_and_ordered_or_equal_bounds",
+      "expectation": "Ordinary, Unicode, interior-whitespace, and non-trimmed zero-width range IDs remain byte-exact while start less than end and start equal to end bounds remain accepted unchanged."
+    },
+    {
+      "name": "reversed_range_reports_invalid_range_before_identity_validation",
+      "expectation": "Every reversed range, including ones with empty or boundary-whitespace IDs, returns the exact Err(ContextMetricInvalidity::InvalidRange { start, end }) before identity validation."
+    }
+  ],
+  "observation_scope": {
+    "observed_surface": [
+      "CanonicalEvidenceId::entity",
+      "CanonicalEvidenceId::relationship",
+      "CanonicalEvidenceId::range",
+      "CanonicalEvidenceId::kind",
+      "CanonicalEvidenceId::id",
+      "CanonicalEvidenceId::canonical_range",
+      "ContextMetricInvalidity::InvalidIdentity",
+      "ContextMetricInvalidity::InvalidRange"
+    ],
+    "baseline_expected_failed_tests": [
+      "entity_rejects_leading_and_trailing_ascii_whitespace_for_every_entity_kind",
+      "entity_rejects_leading_and_trailing_unicode_whitespace_for_every_entity_kind",
+      "relationship_constructor_forwards_boundary_validation",
+      "range_rejects_leading_and_trailing_ascii_whitespace",
+      "range_rejects_leading_and_trailing_unicode_whitespace"
+    ],
+    "baseline_expected_counts": {
+      "total": 13,
+      "passed": 8,
+      "failed": 5,
+      "ignored": 0
+    },
+    "baseline_expected_result": "The test binary launches and runs all 13 tests. Exactly the five baseline_expected_failed_tests fail through runtime assertion failures, exactly 8 tests pass, and 0 tests are ignored. Compilation failure, test-binary launch failure, or process-containment failure does not satisfy the baseline control.",
+    "baseline_required_failure_mode": "runtime_assertion_failure",
+    "baseline_disallowed_failure_modes": [
+      "compilation_failure",
+      "test_binary_launch_failure",
+      "process_containment_failure"
+    ],
+    "candidate_source_allowlist_exact": [
+      "src/context_metrics.rs"
+    ],
+    "candidate_focused_expected_counts": {
+      "total": 13,
+      "passed": 13,
+      "failed": 0,
+      "ignored": 0
+    },
+    "candidate_focused_expectation": "All 13 named trusted acceptance tests actually run and pass after only the audited candidate src/context_metrics.rs bytes are admitted into the fresh candidate validation checkout.",
+    "candidate_regression_tests": [
+      "derives_exact_canonical_sets_and_transparent_fractions",
+      "observed_reads_never_become_reported_reasoning_claims",
+      "zero_denominators_are_typed_undefined_values",
+      "conflicting_or_unbounded_evidence_fails_with_typed_invalidity",
+      "task_session_transport_preserves_observed_reported_and_changed_classes"
+    ],
+    "candidate_regression_expected_counts": {
+      "total": 5,
+      "passed": 5,
+      "failed": 0,
+      "ignored": 0
+    },
+    "candidate_regression_expectation": "All 5 named tests in the focused context_metrics integration-test target actually run and pass.",
+    "acceptance_excludes": [
+      "full-crate Cargo test suite",
+      "project-wide regression acceptance",
+      "all-eleven-task campaign acceptance"
+    ],
+    "excluded_claims": [
+      "model identity",
+      "model or agent cost",
+      "benchmark-model execution",
+      "validation execution status",
+      "acceptance outcome",
+      "qualification for optimization"
+    ]
+  },
+  "root_commands": [
+    {
+      "stage": "baseline_probe_hash",
+      "working_directory": "fresh baseline validation checkout reconstructed from frozen Git",
+      "command": "sha256sum tests/stage2_whitespace_acceptance.rs",
+      "expectation": "Output hash equals 5efd1e64f959da2fb4b3652dd5340685fcdcc5c837458073e49757cb77681cbc."
+    },
+    {
+      "stage": "baseline_probe",
+      "working_directory": "fresh baseline validation checkout reconstructed from frozen Git",
+      "command": "cargo test --locked --test stage2_whitespace_acceptance -- --nocapture",
+      "expectation": "The test binary launches and runs all 13 tests; exactly the five baseline_expected_failed_tests fail through runtime assertion failures; exactly 8 tests pass and 0 tests are ignored; command exits nonzero. Compilation, launch, and process-containment failures do not satisfy this control."
+    },
+    {
+      "stage": "candidate_diff_audit",
+      "working_directory": "fresh candidate validation checkout reconstructed from frozen Git plus allowlisted model source bytes",
+      "command": "git diff -- src/context_metrics.rs",
+      "expectation": "Root audits the only admitted candidate source diff before executing candidate code."
+    },
+    {
+      "stage": "candidate_probe_hash",
+      "working_directory": "fresh candidate validation checkout after trusted probe injection",
+      "command": "sha256sum tests/stage2_whitespace_acceptance.rs",
+      "expectation": "Output hash equals 5efd1e64f959da2fb4b3652dd5340685fcdcc5c837458073e49757cb77681cbc."
+    },
+    {
+      "stage": "candidate_probe",
+      "working_directory": "fresh candidate validation checkout after diff audit and trusted probe injection",
+      "command": "cargo test --locked --test stage2_whitespace_acceptance -- --nocapture",
+      "expectation": "Compilation succeeds; all 13 named trusted acceptance tests actually run and pass; 13 passed, 0 failed, 0 ignored; command exits zero."
+    },
+    {
+      "stage": "candidate_focused_regression",
+      "working_directory": "fresh candidate validation checkout after the focused trusted probe passes",
+      "command": "cargo test --locked --test context_metrics -- --nocapture",
+      "expectation": "All 5 named context_metrics regression tests actually run and pass; 5 passed, 0 failed, 0 ignored; command exits zero. This is not a full-crate, project-wide, or all-eleven-task campaign acceptance gate."
+    }
+  ]
+}

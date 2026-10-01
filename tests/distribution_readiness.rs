@@ -1792,6 +1792,9 @@ fn representative_contract_mutations_fail_closed() {
         "package-archive-pax-sparse",
         "attributes-bare-cr",
         "attributes-mixed-newlines",
+        "encoded-probe-crlf-bytes",
+        "attributes-encoded-probe-altered",
+        "attributes-encoded-probe-broadened",
     ] {
         assert!(
             stdout.contains(&format!("MUTATION {mutation} rejected")),
@@ -1813,13 +1816,14 @@ fn representative_contract_mutations_fail_closed() {
         "package-archive-bounded-members",
         "package-archive-canonical-cargo",
         "attributes-exact-lf",
+        "encoded-probe-exact-lf",
     ] {
         assert!(
             stdout.contains(&format!("CONTROL {control} accepted")),
             "missing control evidence for {control}: {stdout}"
         );
     }
-    assert!(stdout.contains("SELF-TEST passed: 84/84 mutations rejected"));
+    assert!(stdout.contains("SELF-TEST passed: 87/87 mutations rejected"));
 }
 
 #[cfg(windows)]
