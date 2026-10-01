@@ -374,6 +374,10 @@ context precision, and portable consumer contracts. The
 [core operation contracts](docs/core-contracts.md) define legal state
 transitions and failure guarantees. Optional intelligence remains isolated
 until it demonstrates value against the upgraded deterministic baseline.
+The [context qualification harness guide](docs/context-qualification-harness.md)
+documents the frozen corpus, offline report and comparison contracts,
+measurement limits, and the independently executed validation still required
+before optimization claims.
 
 - Explicit operations and Governor-routed operations coexist. Explicit
   operations keep their documented behavior and are not silently redirected.

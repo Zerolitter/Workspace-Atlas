@@ -117,6 +117,23 @@ Useful Context Throughput
 
 **Exit gate:** Reproducible benchmark evidence supports optimization decisions.
 
+### Implementation status — 2026-10-01
+
+Stage 1 was developed in draft
+[PR #6](https://github.com/Zerolitter/Workspace-Atlas/pull/6). Across combined
+Windows runs, 700 unique Rust tests and 19 Python hygiene tests passed, together
+with build, formatting, Clippy, public-hygiene, and package checks. Three
+existing helper probes remain ignored. Windows is verified; Linux runtime
+behavior remains unqualified.
+
+The Stage 2 [qualification harness foundation](context-qualification-harness.md)
+now provides the frozen eleven-class corpus, strict normalized observation and
+reported-receipt contracts, typed metrics, deterministic report reconstruction,
+comparison gates, and synthetic offline fixtures. These are infrastructure
+checks only. No model-task campaign or independently executed validator has
+qualified accepted outcomes or actual Useful Context Throughput, so the Stage 2
+scientific exit gate remains open.
+
 ## Stage 3 — Serving Plane performance
 
 Make context cheap enough for the agent loop while preserving correctness.

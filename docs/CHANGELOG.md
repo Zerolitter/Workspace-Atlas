@@ -8,6 +8,11 @@ This changelog records crate releases and capability compatibility separately.
 
 - Define the core operation guarantees and legal generation/task transitions,
   with state-machine and reader-snapshot qualification for the post-v2 roadmap.
+- Add the Stage 2 offline context-qualification harness foundation: a frozen
+  eleven-class benchmark corpus, strict observation and reported-receipt
+  bindings, typed context metrics, deterministic report reconstruction, and
+  fail-closed comparison gates. Synthetic fixtures are contract tests, not a
+  model-task qualification result.
 
 ### Fixed
 
