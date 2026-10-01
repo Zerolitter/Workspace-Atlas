@@ -2282,6 +2282,77 @@ pub fn execute_context_route<D: ContextRouteDispatcher>(
     }
 }
 
+/// Fail closed when catalogue-backed LIGHT work completed against a generation
+/// that was no longer active at the application delivery boundary.
+pub(crate) fn invalidate_catalogue_light_generation(
+    execution: ContextExecution,
+    observed_generation: GenerationObservation,
+) -> Result<ContextExecution, ContextRouteError> {
+    let generation_failure_result = {
+        let decision = match &execution {
+            ContextExecution::Completed { decision, .. }
+            | ContextExecution::Partial { decision, .. }
+            | ContextExecution::Blocked { decision, .. }
+            | ContextExecution::Interrupted { decision, .. } => decision,
+        };
+        generation_failure(&decision.starting_generation, observed_generation)
+    };
+    let Some((failure, terminal_reason)) = generation_failure_result else {
+        return Ok(execution);
+    };
+
+    let (decision, mut attempts, counters, diagnostics) = match execution {
+        ContextExecution::Completed {
+            decision,
+            attempts,
+            final_route: Route::AtlasLight,
+            counters,
+            diagnostics,
+            ..
+        }
+        | ContextExecution::Partial {
+            decision,
+            attempts,
+            final_route: Route::AtlasLight,
+            counters,
+            diagnostics,
+            ..
+        }
+        | ContextExecution::Blocked {
+            decision,
+            attempts,
+            final_route: Some(Route::AtlasLight),
+            counters,
+            diagnostics,
+            ..
+        } => (decision, attempts, counters, diagnostics),
+        execution => return Ok(execution),
+    };
+    let deficits = vec![RouteDeficit::Route { reason: failure }];
+    let Some(final_attempt) = attempts.last_mut() else {
+        return Err(ContextRouteError::InvalidExecution);
+    };
+    if final_attempt.route != Route::AtlasLight {
+        return Err(ContextRouteError::InvalidExecution);
+    }
+    final_attempt.state = AttemptState::Blocked;
+    final_attempt.deficits = deficits.clone();
+    let (caller_satisfied, _) = caller_satisfaction(&decision);
+
+    ContextExecution::blocked(
+        decision,
+        attempts,
+        Some(Route::AtlasLight),
+        None,
+        caller_satisfied,
+        deficits,
+        counters,
+        diagnostics,
+        None,
+        terminal_reason,
+    )
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Availability {
@@ -2557,5 +2628,389 @@ mod tests {
     #[test]
     fn attempt_duration_conversion_saturates_at_the_wire_limit() {
         assert_eq!(duration_micros(Duration::MAX), u64::MAX);
+    }
+}
+
+#[cfg(test)]
+mod catalogue_light_generation_tests {
+    use super::*;
+
+    #[derive(Debug, Clone, Copy)]
+    enum LightTerminal {
+        Completed,
+        Partial,
+        Blocked,
+    }
+
+    fn light_route_request() -> ContextRouteRequest {
+        ContextRouteRequest {
+            schema_version: CONTEXT_ROUTE_POLICY_VERSION.to_string(),
+            normalized_task_hash: "11".repeat(32),
+            declared_kind: Some(TaskKind::BugFix),
+            classifier_kind: TaskKind::BugFix,
+            classifier_version: TASK_CLASSIFIER_VERSION.to_string(),
+            explicit_seeds: SeedSummary {
+                digest: "22".repeat(32),
+                path_count: 1,
+                symbol_count: 0,
+            },
+            caller_capabilities: BTreeMap::from([
+                (
+                    RequiredCapability::IdentityLookup,
+                    CallerCapabilityState::Satisfied,
+                ),
+                (
+                    RequiredCapability::ExactSource,
+                    CallerCapabilityState::Unsatisfied,
+                ),
+            ]),
+            atlas_intent: AtlasIntent::Allow,
+            route_floor: Route::AtlasLight,
+            route_ceiling: Route::AtlasLight,
+            capability_profile: None,
+            cost_profile: None,
+            profile_registry_digest: None,
+            starting_generation: GenerationObservation::Observed {
+                generation_id: "generation-a".to_string(),
+            },
+            light_operations: vec![
+                VersionedOperation::new(LightOperation::Query),
+                VersionedOperation::new(LightOperation::SourceReference),
+            ],
+            deep_contracts: DeepContractVersions::fixed(),
+            deep_budget: None,
+        }
+    }
+
+    fn light_counters() -> ContextExecutionCounters {
+        ContextExecutionCounters {
+            atlas_calls: 2,
+            records: 3,
+            source_bytes: 2,
+            estimated_tokens: 4,
+            work_units: 5,
+        }
+    }
+
+    fn light_payload() -> ContextPayload {
+        ContextPayload::LightBundle {
+            operations: vec![LightOperationResult::SourceReference {
+                operation_version: SOURCE_REFERENCE_OPERATION_VERSION.to_string(),
+                result_digest: "33".repeat(32),
+                reference_count: 1,
+            }],
+        }
+    }
+
+    fn light_materialization() -> ExplicitMaterialization {
+        ExplicitMaterialization {
+            authorized: true,
+            max_bytes: 2,
+            sources: vec![MaterializedSource {
+                source_digest: "44".repeat(32),
+                start_byte: 0,
+                end_byte: 2,
+                bytes: b"ok".to_vec(),
+            }],
+        }
+    }
+
+    fn light_deficits() -> Vec<RouteDeficit> {
+        vec![RouteDeficit::Capability {
+            capability: RequiredCapability::ExactSource,
+            reason: CapabilityDeficitReason::Stale,
+        }]
+    }
+
+    fn light_execution(terminal: LightTerminal) -> ContextExecution {
+        let decision = decide_context_route(light_route_request()).unwrap();
+        let counters = light_counters();
+        let deficits = light_deficits();
+        let attempt = ExecutionAttempt {
+            attempt_id: "light-terminal".to_string(),
+            route: Route::AtlasLight,
+            state: match terminal {
+                LightTerminal::Completed => AttemptState::Completed,
+                LightTerminal::Partial => AttemptState::Partial,
+                LightTerminal::Blocked => AttemptState::Blocked,
+            },
+            deficits: match terminal {
+                LightTerminal::Completed => Vec::new(),
+                LightTerminal::Partial | LightTerminal::Blocked => deficits.clone(),
+            },
+            counters,
+            elapsed_micros: 17,
+        };
+        let diagnostics = vec![
+            ContextDiagnosticCode::ServingFallback,
+            ContextDiagnosticCode::MaterializationOmitted,
+        ];
+        match terminal {
+            LightTerminal::Completed => ContextExecution::completed(
+                decision,
+                vec![attempt],
+                light_payload(),
+                counters,
+                diagnostics,
+                Some(light_materialization()),
+            ),
+            LightTerminal::Partial => ContextExecution::partial(
+                decision,
+                vec![attempt],
+                Route::AtlasLight,
+                light_payload(),
+                vec![RequiredCapability::IdentityLookup],
+                deficits,
+                counters,
+                diagnostics,
+                Some(light_materialization()),
+                TerminalReason::RouteCeilingReached,
+            ),
+            LightTerminal::Blocked => ContextExecution::blocked(
+                decision,
+                vec![attempt],
+                Some(Route::AtlasLight),
+                Some(light_payload()),
+                vec![RequiredCapability::IdentityLookup],
+                deficits,
+                counters,
+                diagnostics,
+                Some(light_materialization()),
+                TerminalReason::CapabilityUnavailable,
+            ),
+        }
+        .unwrap()
+    }
+
+    fn expected_invalidated_light(
+        execution: &ContextExecution,
+        reason: RouteFailureReason,
+        terminal_reason: TerminalReason,
+    ) -> ContextExecution {
+        let (decision, mut attempts, counters, diagnostics) = match execution.clone() {
+            ContextExecution::Completed {
+                decision,
+                attempts,
+                counters,
+                diagnostics,
+                ..
+            }
+            | ContextExecution::Partial {
+                decision,
+                attempts,
+                counters,
+                diagnostics,
+                ..
+            }
+            | ContextExecution::Blocked {
+                decision,
+                attempts,
+                counters,
+                diagnostics,
+                ..
+            } => (decision, attempts, counters, diagnostics),
+            ContextExecution::Interrupted { .. } => panic!("expected terminal LIGHT execution"),
+        };
+        let deficits = vec![RouteDeficit::Route { reason }];
+        let final_attempt = attempts.last_mut().unwrap();
+        final_attempt.state = AttemptState::Blocked;
+        final_attempt.deficits = deficits.clone();
+        ContextExecution::blocked(
+            decision,
+            attempts,
+            Some(Route::AtlasLight),
+            None,
+            vec![RequiredCapability::IdentityLookup],
+            deficits,
+            counters,
+            diagnostics,
+            None,
+            terminal_reason,
+        )
+        .unwrap()
+    }
+
+    fn direct_execution() -> ContextExecution {
+        let mut request = light_route_request();
+        request.caller_capabilities.insert(
+            RequiredCapability::ExactSource,
+            CallerCapabilityState::Satisfied,
+        );
+        request.route_floor = Route::Direct;
+        request.route_ceiling = Route::Direct;
+        let decision = decide_context_route(request).unwrap();
+        ContextExecution::completed(
+            decision,
+            vec![ExecutionAttempt {
+                attempt_id: "direct-terminal".to_string(),
+                route: Route::Direct,
+                state: AttemptState::Completed,
+                deficits: Vec::new(),
+                counters: ContextExecutionCounters::default(),
+                elapsed_micros: 11,
+            }],
+            ContextPayload::DirectNone {},
+            ContextExecutionCounters::default(),
+            vec![ContextDiagnosticCode::EvidenceOmitted],
+            None,
+        )
+        .unwrap()
+    }
+
+    fn deep_execution() -> ContextExecution {
+        let mut request = light_route_request();
+        request.route_floor = Route::AtlasDeep;
+        request.route_ceiling = Route::AtlasDeep;
+        request.caller_capabilities.insert(
+            RequiredCapability::ValidationPlan,
+            CallerCapabilityState::Unsatisfied,
+        );
+        request.deep_budget =
+            Some(DeepSemanticBudget::new(50, 65_536, 16_384, 4, 10_000, 12).unwrap());
+        let decision = decide_context_route(request).unwrap();
+        let counters = ContextExecutionCounters {
+            atlas_calls: 1,
+            records: 2,
+            source_bytes: 0,
+            estimated_tokens: 3,
+            work_units: 4,
+        };
+        ContextExecution::completed(
+            decision,
+            vec![ExecutionAttempt {
+                attempt_id: "deep-terminal".to_string(),
+                route: Route::AtlasDeep,
+                state: AttemptState::Completed,
+                deficits: Vec::new(),
+                counters,
+                elapsed_micros: 23,
+            }],
+            ContextPayload::DeepContextIr {
+                result: DeepResultReference {
+                    context_ir_version: CONTEXT_IR_VERSION.to_string(),
+                    context_hash: "55".repeat(32),
+                },
+            },
+            counters,
+            vec![ContextDiagnosticCode::EvidenceOmitted],
+            None,
+        )
+        .unwrap()
+    }
+
+    fn interrupted_light_execution() -> ContextExecution {
+        let decision = decide_context_route(light_route_request()).unwrap();
+        let counters = light_counters();
+        ContextExecution::interrupted(
+            decision,
+            vec![ExecutionAttempt {
+                attempt_id: "light-interrupted".to_string(),
+                route: Route::AtlasLight,
+                state: AttemptState::Partial,
+                deficits: light_deficits(),
+                counters,
+                elapsed_micros: 29,
+            }],
+            Some(light_payload()),
+            vec![RequiredCapability::IdentityLookup],
+            counters,
+            vec![ContextDiagnosticCode::MaterializationOmitted],
+            Some(light_materialization()),
+            InterruptionReason::DeadlineExceeded,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn catalogue_light_generation_invalidation_maps_terminal_light_executions() {
+        let cases = [
+            (
+                "completed generation changed",
+                LightTerminal::Completed,
+                GenerationObservation::Observed {
+                    generation_id: "generation-b".to_string(),
+                },
+                RouteFailureReason::GenerationChanged,
+                TerminalReason::GenerationChanged,
+            ),
+            (
+                "partial generation changed",
+                LightTerminal::Partial,
+                GenerationObservation::Observed {
+                    generation_id: "generation-b".to_string(),
+                },
+                RouteFailureReason::GenerationChanged,
+                TerminalReason::GenerationChanged,
+            ),
+            (
+                "blocked generation changed",
+                LightTerminal::Blocked,
+                GenerationObservation::Observed {
+                    generation_id: "generation-b".to_string(),
+                },
+                RouteFailureReason::GenerationChanged,
+                TerminalReason::GenerationChanged,
+            ),
+            (
+                "no active generation",
+                LightTerminal::Completed,
+                GenerationObservation::Unavailable {
+                    reason: GenerationUnavailableReason::NoActiveGeneration,
+                },
+                RouteFailureReason::NoActiveGeneration,
+                TerminalReason::GenerationUnavailable,
+            ),
+            (
+                "generation observation failed",
+                LightTerminal::Completed,
+                GenerationObservation::Unavailable {
+                    reason: GenerationUnavailableReason::ObservationFailed,
+                },
+                RouteFailureReason::StartingGenerationUnavailable,
+                TerminalReason::GenerationUnavailable,
+            ),
+        ];
+
+        for (name, terminal, observed, reason, terminal_reason) in cases {
+            let input = light_execution(terminal);
+            let expected = expected_invalidated_light(&input, reason, terminal_reason);
+            let actual = invalidate_catalogue_light_generation(input, observed).unwrap();
+            assert_eq!(actual, expected, "{name}");
+            actual.validate().unwrap();
+        }
+    }
+
+    #[test]
+    fn catalogue_light_generation_invalidation_leaves_matching_and_other_routes_unchanged() {
+        for terminal in [
+            LightTerminal::Completed,
+            LightTerminal::Partial,
+            LightTerminal::Blocked,
+        ] {
+            let input = light_execution(terminal);
+            let actual = invalidate_catalogue_light_generation(
+                input.clone(),
+                GenerationObservation::Observed {
+                    generation_id: "generation-a".to_string(),
+                },
+            )
+            .unwrap();
+            assert_eq!(actual, input);
+        }
+
+        for (name, input) in [
+            ("direct", direct_execution()),
+            ("deep", deep_execution()),
+            ("interrupted", interrupted_light_execution()),
+        ] {
+            let actual = invalidate_catalogue_light_generation(
+                input.clone(),
+                GenerationObservation::Observed {
+                    generation_id: "generation-b".to_string(),
+                },
+            )
+            .unwrap();
+            assert_eq!(actual, input, "{name}");
+        }
     }
 }

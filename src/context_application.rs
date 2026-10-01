@@ -1759,7 +1759,25 @@ fn dispatch_catalogue_context_application_with_materialization(
         deep_context_ir: None,
         materialization_authorization,
     };
-    let execution = crate::context_route::execute_context_route(decision, &mut dispatcher)?;
+    let mut execution = crate::context_route::execute_context_route(decision, &mut dispatcher)?;
+    let light_terminal = match &execution {
+        crate::context_route::ContextExecution::Completed { final_route, .. }
+        | crate::context_route::ContextExecution::Partial { final_route, .. } => {
+            *final_route == crate::context_route::Route::AtlasLight
+        }
+        crate::context_route::ContextExecution::Blocked { final_route, .. } => {
+            *final_route == Some(crate::context_route::Route::AtlasLight)
+        }
+        crate::context_route::ContextExecution::Interrupted { .. } => false,
+    };
+    if light_terminal {
+        let observed_generation =
+            catalogue_generation_observation(&*dispatcher.connection, workspace);
+        execution = crate::context_route::invalidate_catalogue_light_generation(
+            execution,
+            observed_generation,
+        )?;
+    }
     let light_results_match = match execution.payload() {
         Some(crate::context_route::ContextPayload::LightBundle { operations }) => {
             let expected_count = usize::from(dispatcher.light_results.query.is_some())
