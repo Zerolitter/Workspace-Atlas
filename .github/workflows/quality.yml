@@ -87,6 +87,9 @@ jobs:
         run: cargo test --locked
       - name: Public hygiene unit tests
         run: python -m unittest scripts/test_check_public_hygiene.py
+      - name: Rust evidence validator unit tests
+        working-directory: scripts
+        run: python -s -B -m unittest -v test_rust_semantic_evidence
       - name: Public and package hygiene
         run: python scripts/check-public-hygiene.py
 
