@@ -88,8 +88,7 @@ jobs:
       - name: Public hygiene unit tests
         run: python -m unittest scripts/test_check_public_hygiene.py
       - name: Rust evidence validator unit tests
-        working-directory: scripts
-        run: python -s -B -m unittest -v test_rust_semantic_evidence
+        run: python -s -B -m unittest discover -s scripts -p test_rust_semantic_evidence.py -v
       - name: Public and package hygiene
         run: python scripts/check-public-hygiene.py
 
